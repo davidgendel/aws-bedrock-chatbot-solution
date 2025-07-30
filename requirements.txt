@@ -20,7 +20,7 @@ Pillow>=10.1.0
 
 # Text processing (minimal)
 textstat>=0.7.3
-nltk>=3.8.1
+nltk>=3.8.1,<4.0.0
 
 # JSON handling (faster than standard json)
 orjson>=3.9.0
