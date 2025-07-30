@@ -16,8 +16,8 @@ CYAN='\033[0;36m'
 NC='\033[0m'
 
 # Configuration
-REPO_URL="https://github.com/YOUR_USERNAME/aws-bedrock-chatbot-solution.git"
-INSTALL_DIR="aws-bedrock-chatbot-solution"
+REPO_URL="https://github.com/YOUR_USERNAME/chatbot-rag-v1.0.git"
+INSTALL_DIR="chatbot-rag-v1.0"
 
 # Welcome message
 echo -e "${BLUE}╔══════════════════════════════════════════════════════════════════════════════╗${NC}"
