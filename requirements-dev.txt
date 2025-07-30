@@ -1,0 +1,56 @@
+# Include runtime requirements
+-r requirements.txt
+
+# Web framework and async support (for local development)
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+websockets>=12.0
+aiofiles>=23.2.0
+
+# Data processing and ML (for development/analysis)
+pandas>=2.1.0
+scikit-learn>=1.3.0
+
+# Advanced text processing (for development)
+nltk>=3.8.1
+python-multipart>=0.0.6
+
+# Configuration and utilities
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+typing-extensions>=4.8.0
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+httpx>=0.25.0
+moto[all]>=4.2.0
+
+# Development tools
+black>=23.11.0
+isort>=5.12.0
+flake8>=6.1.0
+mypy>=1.7.0
+
+# Logging and monitoring
+structlog>=23.2.0
+python-json-logger>=2.0.7
+
+# Additional security tools
+python-jose[cryptography]>=3.3.0
+
+# CDK for Python
+aws-cdk-lib>=2.90.0
+constructs>=10.3.0
+
+# Additional document processing
+openpyxl>=3.1.2
+
+# HTTP clients for deployment scripts
+httpx>=0.25.0
+aiohttp>=3.9.0
+requests>=2.31.0
+
+# Environment and configuration
+python-decouple>=3.8
