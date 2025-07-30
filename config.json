@@ -1,13 +1,5 @@
 {
-  "businessName": "SLG Test",
-  "contactEmail": "dgendel@amazon.com",
-  "businessType": "small",
-  "useCase": "customer_support",
   "region": "us-east-1",
-  "database": {
-    "instanceType": "db.t4g.micro",
-    "allocatedStorage": 20
-  },
   "lambda": {
     "chatbot": {
       "provisionedConcurrency": {
@@ -26,18 +18,23 @@
     "defaultTheme": {
       "primaryColor": "#4287f5",
       "secondaryColor": "#f5f5f5",
-      "fontFamily": "Arial, sans-serif",
+      "fontFamily": "'Helvetica Neue', sans-serif",
       "fontSize": "16px",
       "borderRadius": "8px"
     }
   },
+  "s3Vectors": {
+    "indexName": "chatbot-document-vectors",
+    "dimensions": 1536,
+    "similarityMetric": "COSINE"
+  },
   "bedrock": {
-    "modelId": "amazon.nova-lite-v1",
+    "modelId": "amazon.nova-lite-v1:0",
     "guardrails": {
       "createDefault": true,
       "defaultGuardrailConfig": {
-        "name": "SLG TestGuardrail",
-        "description": "Content guardrail for SLG Test chatbot",
+        "name": "ChatbotGuardrail",
+        "description": "Content guardrail for RAG chatbot",
         "contentPolicyConfig": {
           "filters": [
             {
@@ -65,34 +62,6 @@
             }
           ],
           "customWordLists": []
-        },
-        "sensitiveInformationPolicyConfig": {
-          "piiEntities": [
-            {
-              "type": "ALL",
-              "action": "BLOCK"
-            }
-          ]
-        },
-        "topicPolicyConfig": {
-          "topics": [
-            {
-              "name": "Politics",
-              "type": "DENY"
-            },
-            {
-              "name": "Financial advice",
-              "type": "DENY"
-            },
-            {
-              "name": "Legal advice",
-              "type": "DENY"
-            },
-            {
-              "name": "Personal information",
-              "type": "DENY"
-            }
-          ]
         }
       }
     }
