@@ -410,16 +410,6 @@ aws ce get-cost-and-usage --time-period Start=$(date -d '1 day ago' +%Y-%m-%d),E
 aws budgets create-budget --account-id YOUR_ACCOUNT_ID --budget file://budget.json
 ```
 
-### Expected Costs (Monthly)
-| Component | Small (50 users) | Medium (500 users) | Large (5000 users) |
-|-----------|------------------|--------------------|--------------------|
-| Lambda | $5.00 | $25.00 | $150.00 |
-| S3 Vectors | $8.00 | $35.00 | $200.00 |
-| API Gateway | $3.00 | $15.00 | $80.00 |
-| CloudFront | $2.00 | $8.00 | $40.00 |
-| Bedrock | $10.00 | $45.00 | $250.00 |
-| **Total** | **$28.00** | **$128.00** | **$720.00** |
-
 ## 🔒 Security Considerations
 
 ### Security Features
