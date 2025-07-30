@@ -20,11 +20,26 @@ except ImportError:
 # Initialize logger
 logger = logging.getLogger(__name__)
 
-# Download NLTK data if not already downloaded
-try:
-    nltk.data.find('tokenizers/punkt')
-except LookupError:
-    nltk.download('punkt', quiet=True)
+# Download NLTK data if not already downloaded - support both old and new versions
+def ensure_nltk_resources():
+    """Ensure required NLTK resources are available."""
+    resources_needed = ['punkt_tab', 'punkt']  # Try new version first, fallback to old
+    for resource in resources_needed:
+        try:
+            nltk.data.find(f'tokenizers/{resource}')
+            return  # Success, we have what we need
+        except LookupError:
+            try:
+                nltk.download(resource, quiet=True)
+                return  # Successfully downloaded
+            except:
+                continue  # Try next resource
+    
+    # If we get here, log a warning but continue
+    logger.warning("Could not download NLTK punkt resources, sentence tokenization may fail")
+
+# Call the function
+ensure_nltk_resources()
 
 
 def create_chunks(extracted_content: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -209,12 +224,17 @@ def split_text_into_chunks_nlp(text: str, config: Dict[str, Any]) -> List[str]:
             overlap_text = current_chunk[-config["overlapSize"]:] if config["overlapSize"] < len(current_chunk) else current_chunk
             
             # Try to find a sentence boundary in the overlap
-            overlap_sentences = sent_tokenize(overlap_text)
-            if len(overlap_sentences) > 1:
-                # Use the last sentence(s) as overlap
-                current_chunk = overlap_sentences[-1]
-            else:
-                # Just use the overlap text
+            try:
+                overlap_sentences = sent_tokenize(overlap_text)
+                if len(overlap_sentences) > 1:
+                    # Use the last sentence(s) as overlap
+                    current_chunk = overlap_sentences[-1]
+                else:
+                    # Just use the overlap text
+                    current_chunk = overlap_text
+            except Exception as e:
+                logger.warning(f"Sentence tokenization failed in overlap processing: {e}")
+                # Just use the overlap text as-is
                 current_chunk = overlap_text
         
         # Add the sentence to the current chunk
