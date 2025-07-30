@@ -28,11 +28,29 @@ from scipy.spatial.distance import cosine
 import nltk
 from nltk.tokenize import sent_tokenize
 
-# Download NLTK data if needed
-try:
-    nltk.data.find('tokenizers/punkt')
-except LookupError:
-    nltk.download('punkt')
+# Download NLTK data if needed - support both old and new versions
+def ensure_nltk_resources():
+    """Ensure required NLTK resources are available."""
+    resources_needed = ['punkt_tab', 'punkt']  # Try new version first, fallback to old
+    for resource in resources_needed:
+        try:
+            nltk.data.find(f'tokenizers/{resource}')
+            logger.info(f"Found NLTK resource: {resource}")
+            return  # Success, we have what we need
+        except LookupError:
+            try:
+                logger.info(f"Downloading NLTK resource: {resource}")
+                nltk.download(resource, quiet=True)
+                return  # Successfully downloaded
+            except Exception as e:
+                logger.warning(f"Failed to download {resource}: {e}")
+                continue  # Try next resource
+    
+    # If we get here, log an error
+    logger.error("Could not download any NLTK punkt resources, processing will fail")
+
+# Call the function
+ensure_nltk_resources()
 
 # Document processing imports
 try:
@@ -122,7 +140,8 @@ class LocalDocumentProcessor:
             return ""
     
     def _extract_from_pdf(self, file_path: Path) -> str:
-        """Extract text from PDF file."""
+        """Extract text from PDF file with multiple fallback methods."""
+        # Method 1: Try standard PyPDF2
         try:
             with open(file_path, 'rb') as f:
                 reader = PyPDF2.PdfReader(f)
@@ -131,8 +150,27 @@ class LocalDocumentProcessor:
                     text += page.extract_text() + "\n"
                 return text
         except Exception as e:
-            logger.error(f"Failed to extract from PDF {file_path}: {e}")
-            return ""
+            logger.warning(f"Standard PyPDF2 failed for {file_path}: {e}, trying alternative methods")
+        
+        # Method 2: Try PyPDF2 with strict=False
+        try:
+            with open(file_path, 'rb') as f:
+                reader = PyPDF2.PdfReader(f, strict=False)
+                text = ""
+                for page in reader.pages:
+                    try:
+                        text += page.extract_text() + "\n"
+                    except Exception as page_error:
+                        logger.warning(f"Failed to extract page from {file_path}: {page_error}")
+                        continue
+                if text.strip():  # If we got some text, return it
+                    return text
+        except Exception as e:
+            logger.warning(f"Alternative PyPDF2 method failed for {file_path}: {e}")
+        
+        # Method 3: Final fallback - return empty but log the failure
+        logger.error(f"All PDF extraction methods failed for {file_path}, skipping file")
+        return ""
     
     def _extract_from_docx(self, file_path: Path) -> str:
         """Extract text from DOCX file."""
