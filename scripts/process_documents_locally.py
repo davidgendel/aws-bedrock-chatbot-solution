@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-Local document processing script with full functionality.
+Local document processing script with AWS token renewal support.
 This script processes documents locally and uploads the results to S3.
+Includes automatic AWS credential refresh to handle long-running operations.
 """
 
 import argparse
@@ -13,6 +14,7 @@ import time
 import re
 from pathlib import Path
 from typing import Dict, List, Any
+from datetime import datetime, timedelta
 
 # Configure logging
 logging.basicConfig(
@@ -27,6 +29,7 @@ import numpy as np
 from scipy.spatial.distance import cosine
 import nltk
 from nltk.tokenize import sent_tokenize
+from botocore.exceptions import ClientError, TokenRetrievalError, NoCredentialsError
 
 # Download NLTK data if needed - support both old and new versions
 def ensure_nltk_resources():
@@ -61,6 +64,51 @@ try:
 except ImportError as e:
     logger.warning(f"Some document processing libraries not available: {e}")
 
+
+class AWSClientManager:
+    """Manages AWS clients with automatic credential refresh."""
+    
+    def __init__(self, region: str):
+        self.region = region
+        self._clients = {}
+        self._client_creation_time = {}
+        self._refresh_threshold = timedelta(minutes=30)  # Refresh before 1-hour expiry
+        
+    def _should_refresh_client(self, service_name: str) -> bool:
+        """Check if client should be refreshed based on age."""
+        if service_name not in self._client_creation_time:
+            return True
+        
+        age = datetime.now() - self._client_creation_time[service_name]
+        return age > self._refresh_threshold
+    
+    def _create_client(self, service_name: str):
+        """Create a new AWS client."""
+        try:
+            client = boto3.client(service_name, region_name=self.region)
+            self._clients[service_name] = client
+            self._client_creation_time[service_name] = datetime.now()
+            logger.debug(f"Created new {service_name} client")
+            return client
+        except Exception as e:
+            logger.error(f"Failed to create {service_name} client: {e}")
+            raise
+    
+    def get_client(self, service_name: str):
+        """Get AWS client, refreshing if necessary."""
+        if (service_name not in self._clients or 
+            self._should_refresh_client(service_name)):
+            return self._create_client(service_name)
+        
+        return self._clients[service_name]
+    
+    def refresh_all_clients(self):
+        """Force refresh of all clients."""
+        logger.info("Refreshing all AWS clients...")
+        for service_name in list(self._clients.keys()):
+            self._create_client(service_name)
+
+
 class LocalDocumentProcessor:
     """Local document processor with full functionality."""
     
@@ -68,8 +116,56 @@ class LocalDocumentProcessor:
         """Initialize the processor."""
         self.config = self._load_config(config_path)
         self.region = self._get_aws_region()
-        self.bedrock_client = boto3.client('bedrock-runtime', region_name=self.region)
-        self.s3_client = boto3.client('s3', region_name=self.region)
+        self.aws_manager = AWSClientManager(self.region)
+        
+        # Test initial connection
+        self._test_aws_connection()
+        
+    def _test_aws_connection(self):
+        """Test AWS connection and credentials."""
+        try:
+            sts_client = self.aws_manager.get_client('sts')
+            identity = sts_client.get_caller_identity()
+            logger.info(f"AWS connection successful. Account: {identity.get('Account')}, User: {identity.get('Arn')}")
+        except Exception as e:
+            logger.error(f"AWS connection failed: {e}")
+            raise
+    
+    def _get_bedrock_client(self):
+        """Get Bedrock client with automatic refresh."""
+        return self.aws_manager.get_client('bedrock-runtime')
+    
+    def _get_s3_client(self):
+        """Get S3 client with automatic refresh."""
+        return self.aws_manager.get_client('s3')
+    
+    def _get_cloudformation_client(self):
+        """Get CloudFormation client with automatic refresh."""
+        return self.aws_manager.get_client('cloudformation')
+    
+    def _retry_with_refresh(self, func, *args, max_retries=3, **kwargs):
+        """Execute function with automatic client refresh on token expiry."""
+        for attempt in range(max_retries):
+            try:
+                return func(*args, **kwargs)
+            except ClientError as e:
+                error_code = e.response.get('Error', {}).get('Code', '')
+                if error_code in ['ExpiredToken', 'TokenRefreshRequired', 'InvalidToken']:
+                    if attempt < max_retries - 1:
+                        logger.warning(f"Token expired (attempt {attempt + 1}/{max_retries}), refreshing clients...")
+                        self.aws_manager.refresh_all_clients()
+                        time.sleep(2)  # Brief pause before retry
+                        continue
+                raise
+            except (TokenRetrievalError, NoCredentialsError) as e:
+                if attempt < max_retries - 1:
+                    logger.warning(f"Credential error (attempt {attempt + 1}/{max_retries}), refreshing clients...")
+                    self.aws_manager.refresh_all_clients()
+                    time.sleep(2)
+                    continue
+                raise
+        
+        raise Exception(f"Failed after {max_retries} attempts")
         
     def _load_config(self, config_path: str = None) -> Dict[str, Any]:
         """Load configuration from file."""
@@ -218,16 +314,20 @@ class LocalDocumentProcessor:
     
     def _generate_embeddings(self, text: str) -> List[float]:
         """Generate embeddings using Bedrock."""
-        try:
-            response = self.bedrock_client.invoke_model(
+        def _generate():
+            bedrock_client = self._get_bedrock_client()
+            response = bedrock_client.invoke_model(
                 modelId=self.config["bedrock"]["embeddingModelId"],
                 body=json.dumps({
-                    "inputText": text
+                    "inputText": text[:8000]  # Limit text length
                 })
             )
             
             result = json.loads(response['body'].read())
             return result['embedding']
+        
+        try:
+            return self._retry_with_refresh(_generate)
         except Exception as e:
             logger.error(f"Failed to generate embeddings: {e}")
             # Return zero vector as fallback
@@ -235,9 +335,9 @@ class LocalDocumentProcessor:
     
     def _store_vectors_to_s3(self, document_id: str, chunks: List[Dict], embeddings: List[List[float]]):
         """Store vectors and metadata to S3."""
-        try:
+        def _store_operation():
             # Get bucket names from CloudFormation stack
-            cf_client = boto3.client('cloudformation', region_name=self.region)
+            cf_client = self._get_cloudformation_client()
             response = cf_client.describe_stacks(StackName='ChatbotRagStack')
             
             outputs = {}
@@ -252,23 +352,37 @@ class LocalDocumentProcessor:
             
             logger.info(f"Using vector bucket: {vector_bucket}, metadata bucket: {metadata_bucket}")
             
-            # Store vectors
-            for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
-                vector_key = f"{document_id}/chunk_{i}.json"
-                vector_data = {
-                    "document_id": document_id,
-                    "chunk_index": i,
-                    "content": chunk["content"],
-                    "embedding": embedding,
-                    "metadata": chunk["metadata"]
-                }
+            s3_client = self._get_s3_client()
+            
+            # Store vectors in batches to handle large documents
+            batch_size = 50  # Process 50 chunks at a time
+            total_chunks = len(chunks)
+            
+            for batch_start in range(0, total_chunks, batch_size):
+                batch_end = min(batch_start + batch_size, total_chunks)
+                batch_chunks = chunks[batch_start:batch_end]
+                batch_embeddings = embeddings[batch_start:batch_end]
                 
-                self.s3_client.put_object(
-                    Bucket=vector_bucket,
-                    Key=vector_key,
-                    Body=json.dumps(vector_data),
-                    ContentType='application/json'
-                )
+                # Store this batch
+                for i, (chunk, embedding) in enumerate(zip(batch_chunks, batch_embeddings)):
+                    actual_index = batch_start + i
+                    vector_key = f"{document_id}/chunk_{actual_index}.json"
+                    vector_data = {
+                        "document_id": document_id,
+                        "chunk_index": actual_index,
+                        "content": chunk["content"],
+                        "embedding": embedding,
+                        "metadata": chunk["metadata"]
+                    }
+                    
+                    s3_client.put_object(
+                        Bucket=vector_bucket,
+                        Key=vector_key,
+                        Body=json.dumps(vector_data),
+                        ContentType='application/json'
+                    )
+                
+                logger.info(f"Stored batch {batch_start + 1}-{batch_end} of {total_chunks} chunks")
             
             # Store document metadata
             metadata = {
@@ -278,7 +392,7 @@ class LocalDocumentProcessor:
                 "total_chunks": len(chunks)
             }
             
-            self.s3_client.put_object(
+            s3_client.put_object(
                 Bucket=metadata_bucket,
                 Key=f"{document_id}.json",
                 Body=json.dumps(metadata),
@@ -286,7 +400,9 @@ class LocalDocumentProcessor:
             )
             
             logger.info(f"Stored {len(chunks)} chunks for document {document_id}")
-            
+        
+        try:
+            self._retry_with_refresh(_store_operation)
         except Exception as e:
             logger.error(f"Failed to store vectors to S3: {e}")
             raise
@@ -411,9 +527,9 @@ class LocalDocumentProcessor:
     
     def delete_document(self, document_id: str) -> Dict[str, Any]:
         """Delete a document and its vectors."""
-        try:
+        def _delete_operation():
             # Get bucket names from CloudFormation stack
-            cf_client = boto3.client('cloudformation', region_name=self.region)
+            cf_client = self._get_cloudformation_client()
             response = cf_client.describe_stacks(StackName='ChatbotRagStack')
             
             outputs = {}
@@ -423,20 +539,25 @@ class LocalDocumentProcessor:
             vector_bucket = outputs.get('VectorBucketName')
             metadata_bucket = outputs.get('MetadataBucketName')
             
+            s3_client = self._get_s3_client()
+            
             # Delete all chunks for this document
-            paginator = self.s3_client.get_paginator('list_objects_v2')
+            paginator = s3_client.get_paginator('list_objects_v2')
             for page in paginator.paginate(Bucket=vector_bucket, Prefix=f"{document_id}/"):
                 if 'Contents' in page:
                     for obj in page['Contents']:
-                        self.s3_client.delete_object(Bucket=vector_bucket, Key=obj['Key'])
+                        s3_client.delete_object(Bucket=vector_bucket, Key=obj['Key'])
             
             # Delete metadata
             try:
-                self.s3_client.delete_object(Bucket=metadata_bucket, Key=f"{document_id}.json")
+                s3_client.delete_object(Bucket=metadata_bucket, Key=f"{document_id}.json")
             except:
                 pass  # Metadata might not exist
             
             logger.info(f"Successfully deleted document: {document_id}")
+        
+        try:
+            self._retry_with_refresh(_delete_operation)
             return {"status": "success", "document_id": document_id}
         except Exception as e:
             logger.error(f"Failed to delete document {document_id}: {e}")
@@ -444,7 +565,7 @@ class LocalDocumentProcessor:
 
 def main():
     """Main function."""
-    parser = argparse.ArgumentParser(description="Process documents locally and upload to S3")
+    parser = argparse.ArgumentParser(description="Process documents locally and upload to S3 (with automatic AWS token renewal)")
     parser.add_argument("--file", help="Process a single file")
     parser.add_argument("--folder", help="Process all files in a folder")
     parser.add_argument("--recursive", action="store_true", help="Process folder recursively")
