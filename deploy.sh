@@ -1,764 +1,721 @@
 #!/bin/bash
 #
-# RAG Chatbot Easy Deployment Script
+# RAG Chatbot - Atomic Deployment Script with Rollback
 # 
-# This script provides a user-friendly deployment experience for non-developers.
-# It includes comprehensive error handling, progress tracking, and recovery options.
+# This script provides atomic deployment with:
+# - Transaction-like deployment phases
+# - Automatic rollback on failure
+# - State checkpointing and recovery
+# - Comprehensive error handling
+# - Resource cleanup on failure
 #
 
-# Exit immediately if a command exits with a non-zero status
-set -e
+set -euo pipefail
 
-# Colors for output formatting
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-BOLD='\033[1m'
-NC='\033[0m' # No Color
+# Colors for output
+readonly GREEN='\033[0;32m'
+readonly YELLOW='\033[1;33m'
+readonly RED='\033[0;31m'
+readonly BLUE='\033[0;34m'
+readonly CYAN='\033[0;36m'
+readonly BOLD='\033[1m'
+readonly NC='\033[0m'
 
-# Script variables
-CONFIG_FILE="config.json"
-VENV_DIR=".venv"
-PYTHON_CMD="python3"
-LOG_FILE="deployment.log"
-PROGRESS_FILE=".deployment_progress"
-BACKUP_DIR=".deployment_backup"
+# Configuration
+readonly CONFIG_FILE="config.json"
+readonly LOG_FILE="deployment.log"
+readonly STATE_FILE=".deployment_state.json"
+readonly ROLLBACK_FILE=".rollback_state.json"
+readonly CHECKPOINT_DIR=".deployment_checkpoints"
 
-# Progress tracking
-TOTAL_STEPS=8
-CURRENT_STEP=0
+# Deployment phases (atomic units)
+readonly PHASES=(
+    "validate"
+    "prepare"
+    "infrastructure"
+    "lambda"
+    "api"
+    "frontend"
+    "finalize"
+)
 
-# Function to display progress
-progress() {
-    CURRENT_STEP=$((CURRENT_STEP + 1))
-    local percentage=$((CURRENT_STEP * 100 / TOTAL_STEPS))
-    echo -e "\n${CYAN}[Step $CURRENT_STEP/$TOTAL_STEPS - $percentage%] $1${NC}"
-    echo "step_$CURRENT_STEP" > "$PROGRESS_FILE"
-}
+# Global state
+CURRENT_PHASE=""
+DEPLOYMENT_ID=""
+START_TIME=""
 
-# Function to display section headers with better formatting
-section() {
-    echo -e "\n${BLUE}╔══════════════════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${BLUE}║${NC} ${BOLD}$1${NC}"
-    echo -e "${BLUE}╚══════════════════════════════════════════════════════════════════════════════╝${NC}"
-}
-
-# Function to display error messages with helpful context
-error() {
-    echo -e "\n${RED}╔══════════════════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${RED}║ ❌ DEPLOYMENT FAILED${NC}"
-    echo -e "${RED}╠══════════════════════════════════════════════════════════════════════════════╣${NC}"
-    echo -e "${RED}║${NC} Error: $1"
-    echo -e "${RED}║${NC}"
-    echo -e "${RED}║${NC} 📋 What you can do:"
-    echo -e "${RED}║${NC}   1. Check the troubleshooting guide: docs/troubleshooting.md"
-    echo -e "${RED}║${NC}   2. Review the deployment log: $LOG_FILE"
-    echo -e "${RED}║${NC}   3. Run './deploy.sh --recover' to resume from last step"
-    echo -e "${RED}║${NC}   4. Run './deploy.sh --clean' to start fresh"
-    echo -e "${RED}╚══════════════════════════════════════════════════════════════════════════════╝${NC}"
+# Initialize deployment
+init_deployment() {
+    DEPLOYMENT_ID="deploy_$(date +%s)"
+    START_TIME=$(date '+%Y-%m-%d %H:%M:%S')
     
-    # Log error details
-    echo "[$(date)] ERROR: $1" >> "$LOG_FILE"
-    exit 1
-}
-
-# Function to display warnings with context
-warning() {
-    echo -e "${YELLOW}⚠️  Warning: $1${NC}"
-    echo "[$(date)] WARNING: $1" >> "$LOG_FILE"
-}
-
-# Function to display success messages
-success() {
-    echo -e "${GREEN}✅ $1${NC}"
-    echo "[$(date)] SUCCESS: $1" >> "$LOG_FILE"
-}
-
-# Function to display info messages
-info() {
-    echo -e "${CYAN}ℹ️  $1${NC}"
-    echo "[$(date)] INFO: $1" >> "$LOG_FILE"
-}
-
-# Function to check if a command exists
-command_exists() {
-    command -v "$1" &> /dev/null
-}
-
-# Function to prompt user for input with validation
-prompt_user() {
-    local prompt="$1"
-    local default="$2"
-    local validation="$3"
-    local response
+    # Create checkpoint directory
+    mkdir -p "$CHECKPOINT_DIR"
     
-    while true; do
-        if [ -n "$default" ]; then
-            echo -e "${CYAN}$prompt [default: $default]: ${NC}"
-        else
-            echo -e "${CYAN}$prompt: ${NC}"
-        fi
-        
-        read -r response
-        
-        # Use default if no response
-        if [ -z "$response" ] && [ -n "$default" ]; then
-            response="$default"
-        fi
-        
-        # Validate response if validation function provided
-        if [ -n "$validation" ]; then
-            if $validation "$response"; then
-                echo "$response"
-                return 0
-            else
-                echo -e "${RED}Invalid input. Please try again.${NC}"
-                continue
-            fi
-        else
-            echo "$response"
-            return 0
-        fi
-    done
-}
-
-# Validation functions
-validate_region() {
-    local region="$1"
-    if [[ "$region" =~ ^[a-z]{2}-[a-z]+-[0-9]+$ ]]; then
-        return 0
-    else
-        echo -e "${RED}Invalid region format. Expected format: us-east-1, eu-west-1, etc.${NC}"
-        return 1
-    fi
-}
-
-validate_email() {
-    local email="$1"
-    if [[ "$email" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]]; then
-        return 0
-    else
-        echo -e "${RED}Invalid email format.${NC}"
-        return 1
-    fi
-}
-
-validate_business_name() {
-    local name="$1"
-    if [ ${#name} -ge 2 ]; then
-        return 0
-    else
-        echo -e "${RED}Business name must be at least 2 characters long.${NC}"
-        return 1
-    fi
-}
-
-validate_color() {
-    local color="$1"
-    if [[ "$color" =~ ^#[0-9A-Fa-f]{6}$ ]]; then
-        return 0
-    else
-        echo -e "${RED}Invalid color format. Use hex format like #4287f5${NC}"
-        return 1
-    fi
-}
-
-# Function to create backup of important files
-create_backup() {
-    info "Creating backup of configuration files..."
-    mkdir -p "$BACKUP_DIR"
-    
-    if [ -f "$CONFIG_FILE" ]; then
-        cp "$CONFIG_FILE" "$BACKUP_DIR/config.json.backup"
-    fi
-    
-    if [ -f "src/frontend/widget.js" ]; then
-        cp "src/frontend/widget.js" "$BACKUP_DIR/widget.js.backup"
-    fi
-    
-    success "Backup created in $BACKUP_DIR"
-}
-
-# Function to restore from backup
-restore_backup() {
-    if [ -d "$BACKUP_DIR" ]; then
-        info "Restoring from backup..."
-        
-        if [ -f "$BACKUP_DIR/config.json.backup" ]; then
-            cp "$BACKUP_DIR/config.json.backup" "$CONFIG_FILE"
-        fi
-        
-        if [ -f "$BACKUP_DIR/widget.js.backup" ]; then
-            cp "$BACKUP_DIR/widget.js.backup" "src/frontend/widget.js"
-        fi
-        
-        success "Files restored from backup"
-    fi
-}
-
-# Function to clean up deployment artifacts
-cleanup() {
-    info "Cleaning up deployment artifacts..."
-    rm -f "$PROGRESS_FILE"
-    rm -rf "$BACKUP_DIR"
-    rm -f "$LOG_FILE"
-    
-    if [ -d "$VENV_DIR" ]; then
-        rm -rf "$VENV_DIR"
-    fi
-    
-    success "Cleanup completed"
-}
-
-# Function to check AWS permissions
-check_aws_permissions() {
-    info "Checking AWS permissions..."
-    
-    # Test basic AWS access
-    if ! aws sts get-caller-identity &> /dev/null; then
-        error "AWS credentials not configured or invalid. Please run 'aws configure' first."
-    fi
-    
-    # Get current user/role info
-    local identity=$(aws sts get-caller-identity --output text --query 'Arn' 2>/dev/null)
-    info "Deploying as: $identity"
-    
-    # Check if user has admin access (simplified check)
-    local user_name=$(aws sts get-caller-identity --query 'Arn' --output text 2>/dev/null | cut -d'/' -f2 2>/dev/null || echo "")
-    if [ -n "$user_name" ] && aws iam list-attached-user-policies --user-name "$user_name" 2>/dev/null | grep -q "AdministratorAccess"; then
-        success "Administrator access detected"
-    else
-        warning "Cannot verify all required permissions. Deployment may fail if permissions are insufficient."
-        warning "Consider using an IAM user/role with AdministratorAccess for initial deployment."
-    fi
-}
-
-# Function to estimate deployment costs
-estimate_costs() {
-    local region="$1"
-    
-    info "Estimating monthly costs for your deployment..."
-    
-    echo -e "\n${CYAN}💰 Estimated Monthly Costs (USD):${NC}"
-    echo -e "   Small Business (50 users/day):     ${GREEN}\$29.76${NC}"
-    echo -e "   Growing Business (150 users/day):  ${GREEN}\$33.52${NC}"
-    echo -e "   Medium Business (500 users/day):   ${GREEN}\$72.41${NC}"
-    echo -e "\n${YELLOW}Note: Costs may vary based on actual usage and AWS pricing changes.${NC}"
-    echo -e "${YELLOW}See docs/cost-analysis.md for detailed breakdown.${NC}"
-    
-    echo -e "\n${CYAN}Do you want to proceed with deployment? (y/n): ${NC}"
-    read -r proceed
-    
-    if [[ ! "$proceed" =~ ^[Yy]$ ]]; then
-        info "Deployment cancelled by user."
-        exit 0
-    fi
-}
-
-# Function to run interactive setup
-interactive_setup() {
-    section "🚀 RAG Chatbot Interactive Setup"
-    
-    echo -e "${CYAN}Welcome to the RAG Chatbot deployment wizard!${NC}"
-    echo -e "${CYAN}This wizard will guide you through the setup process.${NC}\n"
-    
-    # Get user preferences
-    local region=$(prompt_user "Enter your preferred AWS region" "us-east-1" "validate_region")
-    local business_name=$(prompt_user "Enter your business name" "My Business" "validate_business_name")
-    local contact_email=$(prompt_user "Enter your contact email" "" "validate_email")
-    local primary_color=$(prompt_user "Enter your brand primary color (hex)" "#4287f5" "validate_color")
-    
-    # Create or update config.json
-    cat > "$CONFIG_FILE" << EOF
+    # Initialize state file
+    cat > "$STATE_FILE" << EOF
 {
-  "region": "$region",
-  "businessName": "$business_name",
-  "contactEmail": "$contact_email",
-  "bedrock": {
-    "modelId": "amazon.nova-lite-v1",
-    "guardrails": {
-      "createDefault": true,
-      "defaultGuardrailConfig": {
-        "name": "ChatbotDefaultGuardrail",
-        "description": "Default guardrail for $business_name chatbot",
-        "contentPolicyConfig": {
-          "filters": [
-            {"type": "SEXUAL", "strength": "MEDIUM"},
-            {"type": "VIOLENCE", "strength": "MEDIUM"},
-            {"type": "HATE", "strength": "MEDIUM"},
-            {"type": "INSULTS", "strength": "MEDIUM"}
-          ]
-        },
-        "wordPolicyConfig": {
-          "managedWordLists": [{"type": "PROFANITY"}],
-          "customWordLists": []
-        },
-        "sensitiveInformationPolicyConfig": {
-          "piiEntities": [{"type": "ALL", "action": "BLOCK"}]
-        },
-        "topicPolicyConfig": {
-          "topics": [
-            {"name": "Politics", "type": "DENY"},
-            {"name": "Financial advice", "type": "DENY"},
-            {"name": "Legal advice", "type": "DENY"}
-          ]
-        }
-      }
-    }
-  },
-  "database": {
-    "instanceType": "db.t4g.micro",
-    "allocatedStorage": 20
-  },
-  "api": {
-    "throttling": {
-      "ratePerMinute": 10,
-      "ratePerHour": 100
-    }
-  },
-  "lambda": {
-    "chatbot": {
-      "provisionedConcurrency": {
-        "enabled": true,
-        "concurrentExecutions": 1
-      }
-    }
-  },
-  "widget": {
-    "defaultTheme": {
-      "primaryColor": "$primary_color",
-      "secondaryColor": "#f5f5f5",
-      "fontFamily": "Arial, sans-serif",
-      "fontSize": "16px",
-      "borderRadius": "8px"
-    }
-  }
+    "deployment_id": "$DEPLOYMENT_ID",
+    "start_time": "$START_TIME",
+    "current_phase": "",
+    "completed_phases": [],
+    "failed_phase": "",
+    "rollback_required": false,
+    "resources_created": {},
+    "checkpoints": {}
 }
 EOF
     
-    success "Configuration saved to $CONFIG_FILE"
+    # Initialize rollback state
+    cat > "$ROLLBACK_FILE" << EOF
+{
+    "deployment_id": "$DEPLOYMENT_ID",
+    "rollback_actions": [],
+    "resources_to_cleanup": []
+}
+EOF
     
-    # Show cost estimate
-    estimate_costs "$region"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting atomic deployment $DEPLOYMENT_ID" > "$LOG_FILE"
 }
 
-# Function to check prerequisites with detailed guidance
-check_prerequisites() {
-    progress "Checking Prerequisites"
+# Ensure virtual environment is activated for Python commands
+ensure_venv_activated() {
+    if [ -d ".venv" ] && [ -z "${VIRTUAL_ENV:-}" ]; then
+        source .venv/bin/activate
+    fi
+}
+
+# Run Python command with virtual environment
+run_python() {
+    ensure_venv_activated
+    python "$@"
+}
+
+# Update deployment state
+update_state() {
+    local phase="$1"
+    local status="$2"  # "started", "completed", "failed"
     
-    # Check if config.json exists
+    if command -v jq &> /dev/null; then
+        # Use jq for JSON manipulation
+        local temp_file=$(mktemp)
+        jq --arg phase "$phase" --arg status "$status" --arg time "$(date '+%Y-%m-%d %H:%M:%S')" '
+            if $status == "started" then
+                .current_phase = $phase |
+                .phase_start_time = $time
+            elif $status == "completed" then
+                .completed_phases += [$phase] |
+                .current_phase = "" |
+                .checkpoints[$phase] = $time
+            elif $status == "failed" then
+                .failed_phase = $phase |
+                .rollback_required = true |
+                .failure_time = $time
+            else
+                .
+            end
+        ' "$STATE_FILE" > "$temp_file" && mv "$temp_file" "$STATE_FILE"
+    else
+        # Fallback without jq
+        echo "Phase $phase: $status at $(date '+%Y-%m-%d %H:%M:%S')" >> "$LOG_FILE"
+    fi
+}
+
+# Create checkpoint
+create_checkpoint() {
+    local phase="$1"
+    local checkpoint_data="$2"
+    
+    local checkpoint_file="$CHECKPOINT_DIR/${phase}_checkpoint.json"
+    echo "$checkpoint_data" > "$checkpoint_file"
+    
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Checkpoint created for phase: $phase" >> "$LOG_FILE"
+}
+
+# Add rollback action
+add_rollback_action() {
+    local action_type="$1"
+    local resource_id="$2"
+    local cleanup_command="$3"
+    
+    if command -v jq &> /dev/null; then
+        local temp_file=$(mktemp)
+        jq --arg type "$action_type" --arg id "$resource_id" --arg cmd "$cleanup_command" '
+            .rollback_actions += [{
+                "type": $type,
+                "resource_id": $id,
+                "cleanup_command": $cmd,
+                "timestamp": now | strftime("%Y-%m-%d %H:%M:%S")
+            }]
+        ' "$ROLLBACK_FILE" > "$temp_file" && mv "$temp_file" "$ROLLBACK_FILE"
+    fi
+}
+
+# Enhanced error handler with automatic rollback
+handle_error() {
+    local exit_code=$?
+    local line_number=$1
+    local command="$2"
+    
+    echo -e "\n${RED}╔══════════════════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${RED}║ ❌ Deployment Failed - Initiating Automatic Rollback${NC}"
+    echo -e "${RED}╚══════════════════════════════════════════════════════════════════════════════╝${NC}"
+    
+    # Log the error
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] FATAL ERROR at line $line_number: $command (exit code: $exit_code)" >> "$LOG_FILE"
+    
+    # Update state to failed
+    update_state "$CURRENT_PHASE" "failed"
+    
+    # Perform automatic rollback
+    echo -e "${YELLOW}🔄 Starting automatic rollback...${NC}"
+    perform_rollback
+    
+    exit $exit_code
+}
+
+# Set up error trap
+trap 'handle_error ${LINENO} "$BASH_COMMAND"' ERR
+
+# Perform rollback
+perform_rollback() {
+    echo -e "${CYAN}🔄 Performing rollback for deployment $DEPLOYMENT_ID${NC}"
+    
+    if [ ! -f "$ROLLBACK_FILE" ]; then
+        echo -e "${YELLOW}⚠️  No rollback state found${NC}"
+        return 0
+    fi
+    
+    # Execute rollback actions in reverse order
+    if command -v jq &> /dev/null; then
+        local rollback_actions=$(jq -r '.rollback_actions | reverse | .[] | @base64' "$ROLLBACK_FILE" 2>/dev/null || echo "")
+        
+        if [ -n "$rollback_actions" ]; then
+            echo "$rollback_actions" | while read -r action_data; do
+                local action=$(echo "$action_data" | base64 -d)
+                local action_type=$(echo "$action" | jq -r '.type')
+                local resource_id=$(echo "$action" | jq -r '.resource_id')
+                local cleanup_command=$(echo "$action" | jq -r '.cleanup_command')
+                
+                echo -e "${CYAN}🧹 Rolling back $action_type: $resource_id${NC}"
+                
+                # Execute cleanup command with error handling
+                if eval "$cleanup_command" 2>> "$LOG_FILE"; then
+                    echo -e "${GREEN}✅ Successfully rolled back $resource_id${NC}"
+                else
+                    echo -e "${YELLOW}⚠️  Failed to rollback $resource_id (may need manual cleanup)${NC}"
+                fi
+            done
+        fi
+    fi
+    
+    # Clean up deployment artifacts
+    cleanup_deployment_artifacts
+    
+    echo -e "${GREEN}✅ Rollback completed${NC}"
+}
+
+# Clean up deployment artifacts
+cleanup_deployment_artifacts() {
+    echo -e "${CYAN}🧹 Cleaning up deployment artifacts...${NC}"
+    
+    # Remove temporary files
+    rm -f "$STATE_FILE" "$ROLLBACK_FILE"
+    rm -rf "$CHECKPOINT_DIR"
+    
+    # Clean up any temporary AWS resources
+    if command -v aws &> /dev/null; then
+        # Clean up any CloudFormation stacks in CREATE_FAILED state
+        local failed_stacks=$(aws cloudformation list-stacks --stack-status-filter CREATE_FAILED --query 'StackSummaries[?contains(StackName, `ChatbotRag`)].StackName' --output text 2>/dev/null || echo "")
+        
+        if [ -n "$failed_stacks" ]; then
+            echo "$failed_stacks" | while read -r stack_name; do
+                if [ -n "$stack_name" ]; then
+                    echo -e "${CYAN}🗑️  Cleaning up failed stack: $stack_name${NC}"
+                    aws cloudformation delete-stack --stack-name "$stack_name" 2>> "$LOG_FILE" || true
+                fi
+            done
+        fi
+    fi
+}
+
+# Execute phase with atomic guarantees
+execute_phase() {
+    local phase="$1"
+    local phase_function="$2"
+    
+    CURRENT_PHASE="$phase"
+    
+    echo -e "\n${BLUE}╔══════════════════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${BLUE}║ 🚀 Phase: $phase${NC}"
+    echo -e "${BLUE}╚══════════════════════════════════════════════════════════════════════════════╝${NC}"
+    
+    # Update state to started
+    update_state "$phase" "started"
+    
+    # Execute the phase function
+    if $phase_function; then
+        # Phase completed successfully
+        update_state "$phase" "completed"
+        echo -e "${GREEN}✅ Phase '$phase' completed successfully${NC}"
+    else
+        # Phase failed
+        update_state "$phase" "failed"
+        echo -e "${RED}❌ Phase '$phase' failed${NC}"
+        return 1
+    fi
+}
+
+# Phase 1: Validation
+phase_validate() {
+    echo -e "${CYAN}🔍 Validating deployment prerequisites...${NC}"
+    
+    # Check required commands
+    local required_commands=("aws" "python3" "node" "npm")
+    for cmd in "${required_commands[@]}"; do
+        if ! command -v "$cmd" &> /dev/null; then
+            echo -e "${RED}❌ Required command not found: $cmd${NC}"
+            return 1
+        fi
+    done
+    
+    # Validate AWS credentials
+    if ! aws sts get-caller-identity &>> "$LOG_FILE"; then
+        echo -e "${RED}❌ AWS credentials not configured${NC}"
+        return 1
+    fi
+    
+    # Validate configuration file
     if [ ! -f "$CONFIG_FILE" ]; then
-        warning "$CONFIG_FILE not found. Starting interactive setup..."
-        interactive_setup
+        echo -e "${RED}❌ Configuration file not found: $CONFIG_FILE${NC}"
+        return 1
     fi
     
-    # Parse region from config
-    local region=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE'))['region'])" 2>/dev/null || echo "us-east-1")
-    info "Using region: $region"
-    
-    # Check AWS CLI
-    if ! command_exists aws; then
-        error "AWS CLI is not installed. Please install it from: https://aws.amazon.com/cli/
-        
-        Installation instructions:
-        - macOS: brew install awscli
-        - Ubuntu/Debian: sudo apt install awscli
-        - Windows: Download from AWS website"
+    # Run Python validation if available
+    # Try to use virtual environment if it exists, otherwise use system python3
+    local python_cmd="python3"
+    if [ -d ".venv" ]; then
+        ensure_venv_activated
+        python_cmd="python"
     fi
     
-    # Check AWS CLI version
-    local aws_version=$(aws --version 2>&1 | cut -d' ' -f1 | cut -d'/' -f2)
-    info "AWS CLI version: $aws_version"
-    
-    # Check AWS credentials and permissions
-    check_aws_permissions
-    
-    # Check Python
-    if ! command_exists python3; then
-        error "Python 3 is not installed. Please install it from: https://www.python.org/
-        
-        Installation instructions:
-        - macOS: brew install python3
-        - Ubuntu/Debian: sudo apt install python3 python3-pip python3-venv
-        - Windows: Download from python.org"
-    fi
-    
-    # Check Python version with better messaging
-    local python_version=$(python3 --version 2>&1 | cut -d' ' -f2)
-    local python_major=$(echo "$python_version" | cut -d'.' -f1)
-    local python_minor=$(echo "$python_version" | cut -d'.' -f2)
-    
-    info "Python version: $python_version"
-    
-    if [ "$python_major" -lt 3 ] || ([ "$python_major" -eq 3 ] && [ "$python_minor" -lt 9 ]); then
-        error "Python version $python_version is too old. This project requires Python 3.9 or higher.
-        
-        Please upgrade Python:
-        - macOS: brew upgrade python3
-        - Ubuntu/Debian: sudo apt update && sudo apt upgrade python3
-        - Windows: Download latest version from python.org"
-    fi
-    
-    # Check pip
-    if ! command_exists pip3; then
-        error "pip3 is not installed. Please install it:
-        
-        Installation instructions:
-        - macOS: python3 -m ensurepip --upgrade
-        - Ubuntu/Debian: sudo apt install python3-pip
-        - Windows: Usually included with Python"
-    fi
-    
-    # Check for Node.js and npm (required for AWS CDK)
-    if ! command_exists node; then
-        warning "Node.js is not installed. Installing Node.js (required for AWS CDK)..."
-        
-        # Detect OS and install Node.js
-        if [ -f /etc/debian_version ]; then
-            # Debian/Ubuntu
-            info "Detected Debian/Ubuntu system"
-            info "Installing Node.js using apt..."
-            sudo apt-get update
-            sudo apt-get install -y nodejs npm
-        elif [ -f /etc/redhat-release ]; then
-            # RHEL/CentOS/Fedora
-            info "Detected RHEL/CentOS/Fedora system"
-            info "Installing Node.js using yum..."
-            sudo yum install -y nodejs npm
-        elif command_exists brew; then
-            # macOS with Homebrew
-            info "Detected macOS with Homebrew"
-            info "Installing Node.js using brew..."
-            brew install node
-        else
-            error "Could not automatically install Node.js. Please install Node.js and npm manually:
-            
-            Installation instructions:
-            - Ubuntu/Debian: sudo apt install nodejs npm
-            - RHEL/CentOS: sudo yum install nodejs npm
-            - macOS: brew install node
-            - Windows: Download from https://nodejs.org/"
-        fi
-    fi
-    
-    # Verify Node.js installation
-    if command_exists node; then
-        local node_version=$(node --version 2>&1)
-        info "Node.js version: $node_version"
+    if $python_cmd -c "import sys; sys.path.append('src'); from backend.config_validator import validate_config; validate_config('$CONFIG_FILE')" 2>> "$LOG_FILE"; then
+        echo -e "${GREEN}✅ Configuration validation passed${NC}"
     else
-        error "Node.js installation failed. Please install it manually."
+        echo -e "${RED}❌ Configuration validation failed${NC}"
+        return 1
     fi
     
-    # Verify npm installation
-    if command_exists npm; then
-        local npm_version=$(npm --version 2>&1)
-        info "npm version: $npm_version"
-    else
-        error "npm is not installed. Please install it manually."
-    fi
-    
-    # Check for AWS CDK CLI
-    if ! command_exists cdk; then
-        warning "AWS CDK CLI is not installed. Installing AWS CDK CLI globally..."
-        npm install -g aws-cdk
-        
-        # Verify CDK installation
-        if command_exists cdk; then
-            local cdk_version=$(cdk --version 2>&1)
-            info "AWS CDK CLI version: $cdk_version"
-        else
-            error "AWS CDK CLI installation failed. Please install it manually:
-            
-            Installation instructions:
-            npm install -g aws-cdk"
-        fi
-    else
-        local cdk_version=$(cdk --version 2>&1)
-        info "AWS CDK CLI version: $cdk_version"
-    fi
-    
-    # Check disk space
-    local available_space=$(df . | tail -1 | awk '{print $4}')
-    if [ "$available_space" -lt 1048576 ]; then  # 1GB in KB
-        warning "Low disk space detected. At least 1GB free space is recommended."
-    fi
-    
-    success "All prerequisites satisfied"
+    return 0
 }
 
-# Function to setup Python environment with progress tracking
-setup_python_environment() {
-    progress "Setting up Python Environment"
+# Phase 2: Preparation
+phase_prepare() {
+    echo -e "${CYAN}📦 Preparing deployment environment...${NC}"
     
     # Create virtual environment if it doesn't exist
-    if [ ! -d "$VENV_DIR" ]; then
-        info "Creating Python virtual environment..."
-        python3 -m venv "$VENV_DIR" || error "Failed to create virtual environment. Check Python installation."
-    else
-        info "Using existing virtual environment..."
+    if [ ! -d ".venv" ]; then
+        echo -e "${CYAN}🐍 Creating Python virtual environment...${NC}"
+        if ! python3 -m venv .venv &>> "$LOG_FILE"; then
+            echo -e "${RED}❌ Failed to create virtual environment${NC}"
+            return 1
+        fi
+        add_rollback_action "venv" ".venv" "rm -rf .venv"
     fi
     
     # Activate virtual environment
-    info "Activating virtual environment..."
-    source "$VENV_DIR/bin/activate" || error "Failed to activate virtual environment."
+    echo -e "${CYAN}🔧 Activating virtual environment...${NC}"
+    source .venv/bin/activate
     
-    # Verify virtual environment is active
-    if [ -z "$VIRTUAL_ENV" ]; then
-        error "Virtual environment activation failed."
+    # Upgrade pip in virtual environment
+    if ! python -m pip install --upgrade pip &>> "$LOG_FILE"; then
+        echo -e "${YELLOW}⚠️  Failed to upgrade pip, continuing...${NC}"
     fi
     
-    info "Virtual environment: $VIRTUAL_ENV"
-    success "Python environment ready"
-}
-
-# Function to install dependencies with progress tracking
-install_dependencies() {
-    progress "Installing Dependencies"
-    
-    info "Upgrading pip..."
-    pip install --upgrade pip --quiet || error "Failed to upgrade pip."
-    
-    info "Installing Python dependencies..."
-    pip install -r requirements.txt --quiet || error "Failed to install dependencies. Check requirements.txt file."
-    
-    info "Installing project in development mode..."
-    pip install -e . --quiet || error "Failed to install project."
-    
-    success "Dependencies installed successfully"
-}
-
-# Function to validate configuration
-validate_configuration() {
-    progress "Validating Configuration"
-    
-    info "Validating configuration file..."
-    
-    # Use Python to validate JSON
-    python3 -c "
-import json
-import sys
-
-try:
-    with open('$CONFIG_FILE', 'r') as f:
-        config = json.load(f)
-    
-    required_keys = ['region', 'bedrock', 'database', 'api', 'lambda', 'widget']
-    missing_keys = [key for key in required_keys if key not in config]
-    
-    if missing_keys:
-        print(f'Missing required configuration keys: {missing_keys}')
-        sys.exit(1)
-    
-    print('Configuration validation passed')
-except json.JSONDecodeError as e:
-    print(f'Invalid JSON in config file: {e}')
-    sys.exit(1)
-except Exception as e:
-    print(f'Configuration validation failed: {e}')
-    sys.exit(1)
-" || error "Configuration validation failed. Please check your config.json file."
-    
-    success "Configuration validated"
-}
-
-# Function to deploy infrastructure with better error handling
-deploy_infrastructure() {
-    progress "Deploying AWS Infrastructure"
-    
-    info "This step may take 10-15 minutes. Please be patient..."
-    info "Deploying Lambda functions, database, API Gateway, and other AWS resources..."
-    
-    # Run the Python deployment script with better error handling
-    if ! python3 -m scripts.deploy 2>&1 | tee -a "$LOG_FILE"; then
-        error "Infrastructure deployment failed. Check the log file for details: $LOG_FILE
-        
-        Common causes:
-        - Insufficient AWS permissions
-        - Resource limits exceeded
-        - Network connectivity issues
-        - Invalid configuration
-        
-        Try running: ./deploy.sh --recover"
+    # Install Python dependencies in virtual environment
+    echo -e "${CYAN}📦 Installing Python dependencies in virtual environment...${NC}"
+    if ! python -m pip install -r requirements.txt &>> "$LOG_FILE"; then
+        echo -e "${RED}❌ Failed to install Python dependencies${NC}"
+        return 1
     fi
     
-    success "Infrastructure deployed successfully"
+    # Install CDK if not present
+    if ! npm list -g aws-cdk &>> "$LOG_FILE"; then
+        echo -e "${CYAN}📦 Installing AWS CDK...${NC}"
+        if ! npm install -g aws-cdk &>> "$LOG_FILE"; then
+            echo -e "${RED}❌ Failed to install AWS CDK${NC}"
+            return 1
+        fi
+        add_rollback_action "npm_package" "aws-cdk" "npm uninstall -g aws-cdk"
+    fi
+    
+    # Bootstrap CDK if needed
+    local account_id=$(aws sts get-caller-identity --query Account --output text)
+    local region=$(aws configure get region || echo "us-east-1")
+    
+    if ! cdk bootstrap aws://$account_id/$region &>> "$LOG_FILE"; then
+        echo -e "${YELLOW}⚠️  CDK bootstrap may have failed (might be already bootstrapped)${NC}"
+    fi
+    
+    return 0
 }
 
-# Function to verify deployment
-verify_deployment() {
-    progress "Verifying Deployment"
+# Phase 3: Infrastructure
+phase_infrastructure() {
+    echo -e "${CYAN}🏗️  Deploying infrastructure...${NC}"
     
-    info "Checking deployed resources..."
+    # Ensure virtual environment is activated for CDK deployment
+    ensure_venv_activated
     
-    # Check if stack exists
-    local region=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE'))['region'])")
+    # Deploy CDK stack
+    local stack_name="ChatbotRagStack"
     
-    if aws cloudformation describe-stacks --stack-name "ChatbotRagStack" --region "$region" &> /dev/null; then
-        success "CloudFormation stack found"
+    if cdk deploy --require-approval never --outputs-file cdk-outputs.json &>> "$LOG_FILE"; then
+        echo -e "${GREEN}✅ Infrastructure deployed successfully${NC}"
+        
+        # Add rollback action for the stack
+        add_rollback_action "cloudformation_stack" "$stack_name" "aws cloudformation delete-stack --stack-name $stack_name"
+        
+        # Create checkpoint with stack outputs
+        if [ -f "cdk-outputs.json" ]; then
+            create_checkpoint "infrastructure" "$(cat cdk-outputs.json)"
+        fi
+        
+        return 0
     else
-        error "CloudFormation stack not found. Deployment may have failed."
+        echo -e "${RED}❌ Infrastructure deployment failed${NC}"
+        return 1
     fi
-    
-    success "Deployment verification completed"
 }
 
-# Function to setup knowledge base
-setup_knowledge_base() {
-    progress "Setting up Knowledge Base"
+# Phase 4: Lambda Functions
+phase_lambda() {
+    echo -e "${CYAN}⚡ Configuring Lambda functions...${NC}"
     
-    # Check if documents folder exists
-    if [ -d "documents" ] && [ "$(ls -A documents)" ]; then
-        info "Found documents folder with files. Processing knowledge base..."
-        python3 -m scripts.upload_documents --folder ./documents || warning "Some documents may not have been processed correctly."
-        success "Knowledge base setup completed"
+    # Lambda functions are deployed as part of CDK stack
+    # This phase handles post-deployment configuration
+    
+    # Warm up Lambda functions to avoid cold starts
+    if [ -f "cdk-outputs.json" ] && command -v jq &> /dev/null; then
+        local api_endpoint=$(jq -r '.ChatbotRagStack.ApiEndpoint // empty' cdk-outputs.json)
+        
+        if [ -n "$api_endpoint" ]; then
+            echo -e "${CYAN}🔥 Warming up Lambda functions...${NC}"
+            
+            # Make a test request to warm up the function
+            if curl -s -X POST "$api_endpoint/chat" \
+                -H "Content-Type: application/json" \
+                -d '{"message": "test", "session_id": "warmup"}' \
+                &>> "$LOG_FILE"; then
+                echo -e "${GREEN}✅ Lambda functions warmed up${NC}"
+            else
+                echo -e "${YELLOW}⚠️  Lambda warmup failed (functions may still work)${NC}"
+            fi
+        fi
+    fi
+    
+    return 0
+}
+
+# Phase 5: API Configuration
+phase_api() {
+    echo -e "${CYAN}🌐 Configuring API endpoints...${NC}"
+    
+    # API Gateway is deployed as part of CDK stack
+    # This phase handles post-deployment API configuration
+    
+    if [ -f "cdk-outputs.json" ] && command -v jq &> /dev/null; then
+        local api_endpoint=$(jq -r '.ChatbotRagStack.ApiEndpoint // empty' cdk-outputs.json)
+        local websocket_endpoint=$(jq -r '.ChatbotRagStack.WebSocketEndpoint // empty' cdk-outputs.json)
+        
+        if [ -n "$api_endpoint" ] && [ -n "$websocket_endpoint" ]; then
+            echo -e "${GREEN}✅ API endpoints configured:${NC}"
+            echo -e "   REST API: $api_endpoint"
+            echo -e "   WebSocket: $websocket_endpoint"
+            
+            # Test API endpoints
+            if curl -s "$api_endpoint/health" &>> "$LOG_FILE"; then
+                echo -e "${GREEN}✅ API health check passed${NC}"
+            else
+                echo -e "${YELLOW}⚠️  API health check failed${NC}"
+            fi
+            
+            return 0
+        else
+            echo -e "${RED}❌ API endpoints not found in stack outputs${NC}"
+            return 1
+        fi
     else
-        info "No documents folder found or folder is empty."
-        info "Create a 'documents' folder and add your knowledge base files, then run:"
-        info "python3 -m scripts.upload_documents --folder ./documents"
-        
-        # Create empty documents folder
-        mkdir -p documents
-        echo "# Add your knowledge base documents here" > documents/README.md
-        
-        success "Documents folder created. Add your files and re-run the upload command."
+        echo -e "${RED}❌ Stack outputs not available${NC}"
+        return 1
     fi
 }
 
-# Function to display final instructions
-display_final_instructions() {
-    progress "Finalizing Setup"
+# Phase 6: Frontend
+phase_frontend() {
+    echo -e "${CYAN}🎨 Configuring frontend...${NC}"
     
-    local region=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE'))['region'])")
-    
-    section "🎉 Deployment Completed Successfully!"
-    
-    echo -e "${GREEN}Your RAG Chatbot is now ready to use!${NC}\n"
-    
-    echo -e "${CYAN}📋 Next Steps:${NC}"
-    echo -e "   1. Add your knowledge base documents to the 'documents' folder"
-    echo -e "   2. Run: ${YELLOW}python3 -m scripts.upload_documents --folder ./documents${NC}"
-    echo -e "   3. Integrate the widget into your website using the code below"
-    echo -e "   4. Test your chatbot and customize as needed\n"
-    
-    echo -e "${CYAN}🔗 Integration Code:${NC}"
-    echo -e "${YELLOW}<!-- Add this to your website's HTML -->
-<script src=\"https://YOUR_CLOUDFRONT_DOMAIN/widget.js\"></script>
-<script>
-  SmallBizChatbot.init({
-    containerId: 'chatbot-container',
-    theme: {
-      primaryColor: '#4287f5',
-      fontFamily: 'Arial, sans-serif'
-    }
-  });
-</script>
-<div id=\"chatbot-container\"></div>${NC}\n"
-    
-    echo -e "${CYAN}📚 Documentation:${NC}"
-    echo -e "   • User Guide: ${YELLOW}docs/user-guide.md${NC}"
-    echo -e "   • Troubleshooting: ${YELLOW}docs/troubleshooting.md${NC}"
-    echo -e "   • Cost Analysis: ${YELLOW}docs/cost-analysis.md${NC}\n"
-    
-    echo -e "${CYAN}🔧 Management Commands:${NC}"
-    echo -e "   • Upload documents: ${YELLOW}python3 -m scripts.upload_documents --folder ./documents${NC}"
-    echo -e "   • Clean database: ${YELLOW}python3 -m scripts.cleanup_database${NC}"
-    echo -e "   • View logs: ${YELLOW}tail -f $LOG_FILE${NC}\n"
-    
-    success "Setup completed! Your chatbot is ready to use."
+    if [ -f "cdk-outputs.json" ] && command -v jq &> /dev/null; then
+        local api_endpoint=$(jq -r '.ChatbotRagStack.ApiEndpoint // empty' cdk-outputs.json)
+        local websocket_endpoint=$(jq -r '.ChatbotRagStack.WebSocketEndpoint // empty' cdk-outputs.json)
+        local cloudfront_url=$(jq -r '.ChatbotRagStack.CloudFrontUrl // empty' cdk-outputs.json)
+        local api_key_arn=$(jq -r '.ChatbotRagStack.ApiKey // empty' cdk-outputs.json)
+        
+        # Extract API key ID from ARN and get the actual key value
+        local api_key_id=""
+        local api_key_value=""
+        
+        if [ -n "$api_key_arn" ]; then
+            # Extract key ID from ARN (format: arn:aws:apigateway:region::/apikeys/keyid)
+            api_key_id=$(echo "$api_key_arn" | sed 's/.*\/\([^\/]*\)$/\1/')
+            
+            if [ -n "$api_key_id" ]; then
+                # Get the actual API key value
+                api_key_value=$(aws apigateway get-api-key --api-key "$api_key_id" --include-value --query 'value' --output text 2>/dev/null)
+                
+                if [ -z "$api_key_value" ] || [ "$api_key_value" = "None" ]; then
+                    echo -e "${YELLOW}⚠️  Could not retrieve API key value, trying alternative method...${NC}"
+                    # Try using the key name instead
+                    api_key_value=$(aws apigateway get-api-keys --name-query "ChatbotApiKey" --include-values --query 'items[0].value' --output text 2>/dev/null)
+                fi
+            fi
+        fi
+        
+        # Update frontend configuration
+        if [ -n "$api_endpoint" ] && [ -n "$websocket_endpoint" ]; then
+            # Replace placeholders in widget.js
+            if [ -n "$api_key_value" ] && [ "$api_key_value" != "None" ]; then
+                sed -i.bak \
+                    -e "s|API_ENDPOINT_PLACEHOLDER|$api_endpoint|g" \
+                    -e "s|API_KEY_PLACEHOLDER|$api_key_value|g" \
+                    -e "s|WEBSOCKET_URL_PLACHOLDER|$websocket_endpoint|g" \
+                    -e "s|WEBSOCKET_URL_PLACEHOLDER|$websocket_endpoint|g" \
+                    src/frontend/widget.js
+                
+                echo -e "${GREEN}✅ Frontend configured with API endpoints and key${NC}"
+            else
+                echo -e "${YELLOW}⚠️  API key not available, configuring without key${NC}"
+                sed -i.bak \
+                    -e "s|API_ENDPOINT_PLACEHOLDER|$api_endpoint|g" \
+                    -e "s|API_KEY_PLACEHOLDER|YOUR_API_KEY_HERE|g" \
+                    -e "s|WEBSOCKET_URL_PLACHOLDER|$websocket_endpoint|g" \
+                    -e "s|WEBSOCKET_URL_PLACEHOLDER|$websocket_endpoint|g" \
+                    src/frontend/widget.js
+                
+                echo -e "${YELLOW}⚠️  Please manually replace 'YOUR_API_KEY_HERE' with your API key${NC}"
+                echo -e "${GREEN}✅ Frontend configured with API endpoints${NC}"
+            fi
+            
+            if [ -n "$cloudfront_url" ]; then
+                echo -e "${GREEN}✅ CloudFront distribution: $cloudfront_url${NC}"
+            fi
+            
+            return 0
+        else
+            echo -e "${RED}❌ API endpoints not available for frontend configuration${NC}"
+            return 1
+        fi
+    else
+        echo -e "${RED}❌ Stack outputs not available${NC}"
+        return 1
+    fi
 }
 
-# Function to handle recovery from failed deployment
-recover_deployment() {
-    section "🔄 Recovering from Failed Deployment"
+# Phase 7: Finalization
+phase_finalize() {
+    echo -e "${CYAN}🎯 Finalizing deployment...${NC}"
     
-    if [ ! -f "$PROGRESS_FILE" ]; then
-        error "No previous deployment found to recover from."
+    # Upload frontend files to S3 website bucket
+    if [ -f "cdk-outputs.json" ] && command -v jq &> /dev/null; then
+        local website_bucket=$(jq -r '.ChatbotRagStack.WebsiteBucketName // empty' cdk-outputs.json)
+        local cloudfront_url=$(jq -r '.ChatbotRagStack.CloudFrontUrl // empty' cdk-outputs.json)
+        
+        if [ -n "$website_bucket" ]; then
+            echo -e "${CYAN}📤 Uploading frontend files to S3...${NC}"
+            
+            # Upload widget.js with proper content type
+            if aws s3 cp src/frontend/widget.js "s3://$website_bucket/widget.js" \
+                --content-type "application/javascript" \
+                --cache-control "public, max-age=3600" &>> "$LOG_FILE"; then
+                echo -e "${GREEN}✅ Uploaded widget.js to S3${NC}"
+            else
+                echo -e "${YELLOW}⚠️  Failed to upload widget.js to S3${NC}"
+            fi
+            
+            # Upload index.html with proper content type
+            if aws s3 cp src/frontend/index.html "s3://$website_bucket/index.html" \
+                --content-type "text/html" \
+                --cache-control "public, max-age=300" &>> "$LOG_FILE"; then
+                echo -e "${GREEN}✅ Uploaded index.html to S3${NC}"
+            else
+                echo -e "${YELLOW}⚠️  Failed to upload index.html to S3${NC}"
+            fi
+            
+            # Invalidate CloudFront cache for the uploaded files
+            if [ -n "$cloudfront_url" ]; then
+                local distribution_id=$(echo "$cloudfront_url" | sed 's|https://||' | sed 's|\.cloudfront\.net.*||')
+                if [ -n "$distribution_id" ]; then
+                    echo -e "${CYAN}🔄 Invalidating CloudFront cache...${NC}"
+                    if aws cloudfront create-invalidation \
+                        --distribution-id "$distribution_id" \
+                        --paths "/widget.js" "/index.html" &>> "$LOG_FILE"; then
+                        echo -e "${GREEN}✅ CloudFront cache invalidated${NC}"
+                    else
+                        echo -e "${YELLOW}⚠️  Failed to invalidate CloudFront cache${NC}"
+                    fi
+                fi
+            fi
+        else
+            echo -e "${YELLOW}⚠️  Website bucket name not found in outputs${NC}"
+        fi
+        
+        # Generate integration code
+        if [ -n "$cloudfront_url" ]; then
+            # Generate integration HTML
+            cat > integration.html << EOF
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chatbot Integration</title>
+</head>
+<body>
+    <div id="chatbot-container"></div>
+    <script src="$cloudfront_url/widget.js"></script>
+    <script>
+        // Initialize the chatbot
+        SmallBizChatbot.init({
+            containerId: 'chatbot-container'
+        });
+    </script>
+</body>
+</html>
+EOF
+            
+            echo -e "${GREEN}✅ Integration code generated: integration.html${NC}"
+        fi
     fi
     
-    local last_step=$(cat "$PROGRESS_FILE")
-    info "Resuming from: $last_step"
+    # Clean up temporary files
+    rm -f cdk-outputs.json src/frontend/widget.js.bak
     
-    case "$last_step" in
-        "step_1"|"step_2"|"step_3")
-            info "Resuming from dependency installation..."
-            setup_python_environment
-            install_dependencies
-            validate_configuration
-            deploy_infrastructure
-            verify_deployment
-            setup_knowledge_base
-            display_final_instructions
+    # Display deployment summary
+    display_deployment_summary
+    
+    return 0
+}
+
+# Display deployment summary
+display_deployment_summary() {
+    echo -e "\n${GREEN}╔══════════════════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${GREEN}║ 🎉 Deployment Completed Successfully!${NC}"
+    echo -e "${GREEN}╚══════════════════════════════════════════════════════════════════════════════╝${NC}"
+    
+    if [ -f "cdk-outputs.json" ] && command -v jq &> /dev/null; then
+        local api_endpoint=$(jq -r '.ChatbotRagStack.ApiEndpoint // empty' cdk-outputs.json)
+        local websocket_endpoint=$(jq -r '.ChatbotRagStack.WebSocketEndpoint // empty' cdk-outputs.json)
+        local cloudfront_url=$(jq -r '.ChatbotRagStack.CloudFrontUrl // empty' cdk-outputs.json)
+        
+        echo -e "\n${CYAN}📋 Deployment Details:${NC}"
+        echo -e "   Deployment ID: $DEPLOYMENT_ID"
+        echo -e "   Start Time: $START_TIME"
+        echo -e "   End Time: $(date '+%Y-%m-%d %H:%M:%S')"
+        
+        echo -e "\n${CYAN}🔗 Endpoints:${NC}"
+        [ -n "$api_endpoint" ] && echo -e "   REST API: $api_endpoint"
+        [ -n "$websocket_endpoint" ] && echo -e "   WebSocket: $websocket_endpoint"
+        [ -n "$cloudfront_url" ] && echo -e "   Frontend: $cloudfront_url"
+        
+        echo -e "\n${CYAN}📝 Next Steps:${NC}"
+        echo -e "   1. Upload documents: .venv/bin/python -m scripts.upload_documents --folder ./documents"
+        echo -e "   2. Test the chatbot: Open integration.html in your browser"
+        echo -e "   3. Integrate: Copy the code from integration.html to your website"
+        
+        echo -e "\n${CYAN}📊 Management Commands:${NC}"
+        echo -e "   • View logs: aws logs tail /aws/lambda/ChatbotRagStack-ChatbotFunction"
+        echo -e "   • Clean vectors: .venv/bin/python scripts/cleanup_vectors.py --days 90"
+        echo -e "   • Monitor costs: Check AWS Cost Explorer"
+    fi
+    
+    echo -e "\n${GREEN}✅ Your AI chatbot is ready to use!${NC}"
+}
+
+# Main deployment function
+main() {
+    local command="${1:-deploy}"
+    
+    case "$command" in
+        "deploy")
+            init_deployment
+            
+            # Execute all phases
+            for phase in "${PHASES[@]}"; do
+                execute_phase "$phase" "phase_$phase"
+            done
+            
+            # Clean up state files on success
+            rm -f "$STATE_FILE" "$ROLLBACK_FILE"
+            rm -rf "$CHECKPOINT_DIR"
             ;;
-        "step_4"|"step_5")
-            info "Resuming from infrastructure deployment..."
-            deploy_infrastructure
-            verify_deployment
-            setup_knowledge_base
-            display_final_instructions
+            
+        "rollback")
+            echo -e "${YELLOW}🔄 Manual rollback requested${NC}"
+            perform_rollback
             ;;
-        "step_6"|"step_7")
-            info "Resuming from final steps..."
-            setup_knowledge_base
-            display_final_instructions
+            
+        "status")
+            if [ -f "$STATE_FILE" ]; then
+                echo -e "${CYAN}📊 Deployment Status:${NC}"
+                if command -v jq &> /dev/null; then
+                    jq -r '
+                        "Deployment ID: " + .deployment_id,
+                        "Start Time: " + .start_time,
+                        "Current Phase: " + (.current_phase // "None"),
+                        "Completed Phases: " + (.completed_phases | join(", ")),
+                        "Failed Phase: " + (.failed_phase // "None"),
+                        "Rollback Required: " + (.rollback_required | tostring)
+                    ' "$STATE_FILE"
+                else
+                    cat "$STATE_FILE"
+                fi
+            else
+                # Check CloudFormation stack status
+                echo -e "${CYAN}📊 Checking CloudFormation Stack Status:${NC}"
+                if aws cloudformation describe-stacks --stack-name ChatbotRagStack &> /dev/null; then
+                    stack_status=$(aws cloudformation describe-stacks --stack-name ChatbotRagStack --query 'Stacks[0].StackStatus' --output text 2>/dev/null)
+                    creation_time=$(aws cloudformation describe-stacks --stack-name ChatbotRagStack --query 'Stacks[0].CreationTime' --output text 2>/dev/null)
+                    
+                    echo -e "${GREEN}✅ Stack Status: $stack_status${NC}"
+                    echo -e "${GREEN}✅ Created: $creation_time${NC}"
+                    
+                    # Get stack outputs
+                    echo -e "${CYAN}📋 Stack Outputs:${NC}"
+                    aws cloudformation describe-stacks --stack-name ChatbotRagStack --query 'Stacks[0].Outputs[*].[OutputKey,OutputValue]' --output table 2>/dev/null || echo "No outputs available"
+                else
+                    echo -e "${RED}❌ ChatbotRagStack not found. Please deploy first.${NC}"
+                fi
+            fi
             ;;
+            
+        "help"|"--help")
+            echo -e "${CYAN}RAG Chatbot - Atomic Deployment Script${NC}"
+            echo -e ""
+            echo -e "${BOLD}Usage:${NC}"
+            echo -e "  $0 [command]"
+            echo -e ""
+            echo -e "${BOLD}Commands:${NC}"
+            echo -e "  deploy    Deploy the chatbot (default)"
+            echo -e "  rollback  Rollback the current deployment"
+            echo -e "  status    Show deployment status"
+            echo -e "  help      Show this help message"
+            ;;
+            
         *)
-            warning "Unknown recovery point. Starting fresh deployment..."
-            main_deployment
+            echo -e "${RED}❌ Unknown command: $command${NC}"
+            echo -e "Run '$0 help' for usage information"
+            exit 1
             ;;
     esac
 }
 
-# Main deployment function
-main_deployment() {
-    # Initialize logging
-    echo "[$(date)] Starting deployment..." > "$LOG_FILE"
-    
-    # Create backup
-    create_backup
-    
-    # Run deployment steps
-    check_prerequisites
-    setup_python_environment
-    install_dependencies
-    validate_configuration
-    deploy_infrastructure
-    verify_deployment
-    setup_knowledge_base
-    display_final_instructions
-    
-    # Cleanup progress file
-    rm -f "$PROGRESS_FILE"
-}
-
-# Handle command line arguments
-case "${1:-}" in
-    --recover)
-        recover_deployment
-        ;;
-    --clean)
-        cleanup
-        info "Cleanup completed. You can now run a fresh deployment."
-        ;;
-    --help|-h)
-        echo -e "${CYAN}RAG Chatbot Deployment Script${NC}"
-        echo -e ""
-        echo -e "Usage: $0 [OPTIONS]"
-        echo -e ""
-        echo -e "Options:"
-        echo -e "  (no args)    Run normal deployment"
-        echo -e "  --recover    Recover from failed deployment"
-        echo -e "  --clean      Clean up deployment artifacts"
-        echo -e "  --help       Show this help message"
-        echo -e ""
-        echo -e "For more information, see: docs/deployment-guide.md"
-        ;;
-    *)
-        section "🤖 RAG Chatbot Deployment"
-        echo -e "${CYAN}Starting deployment process...${NC}"
-        echo -e "${CYAN}This will take approximately 15-20 minutes.${NC}\n"
-        
-        main_deployment
-        ;;
-esac
+# Run main function
+main "$@"
