@@ -2,21 +2,21 @@
 
 > **⚠️ DISCLAIMER**: This project is an example of how you can design and deploy a small scale chatbot leveraging AWS services such as AWS Lambda, Amazon Bedrock, and AWS API Gateway. The focus in this example is on keeping costs as low as possible while also upholding strong security principles and protections. By deploying this project you will incur costs that will depend on your actual utilization. No support or warranty is provided. This example is not endorsed or supported by AWS.
 
-Deploy a production-ready AI chatbot that learns from your documents in just 15 minutes. **Starting at $22.97/month**.
+Deploy a production-ready AI chatbot that learns from your documents in just 15 minutes. **Starting at $21.89/month**.
 
 ## 🚀 Quick Start
 
 ### One-Command Deployment (Recommended)
 ```bash
-curl -sSL https://raw.githubusercontent.com/YOUR_USERNAME/chatbot-rag-v1.0/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/YOUR_USERNAME/aws-bedrock-chatbot-solution/main/install.sh | bash
 ```
 
 **⚠️ IMPORTANT**: Replace `YOUR_USERNAME` with your actual GitHub username.
 
 ### Manual Deployment
 ```bash
-git clone https://github.com/YOUR_USERNAME/chatbot-rag-v1.0.git
-cd chatbot-rag-v1.0
+git clone https://github.com/YOUR_USERNAME/aws-bedrock-chatbot-solution.git
+cd aws-bedrock-chatbot-solution
 ./deploy.sh deploy
 ```
 
@@ -330,13 +330,3 @@ print(f'Throughput: {1000/(end-start):.0f} vectors/second')
 MIT License - Use for commercial and personal projects.
 
 ---
-
-**Ready to deploy your AI assistant?**
-
-```bash
-curl -sSL https://raw.githubusercontent.com/YOUR_USERNAME/chatbot-rag-v1.0/main/install.sh | bash
-```
-
-*Questions? Check our [Complete Deployment Guide](DEPLOYMENT.md) or [FAQ](docs/faq.md).*
-
-**⚠️ Replace `YOUR_USERNAME` with your actual GitHub username.**
