@@ -2,6 +2,10 @@
 """
 Sync backend files to lambda_function directory for deployment.
 This ensures the Lambda function has all necessary files.
+
+NOTE: s3_vector_utils.py is intentionally excluded from sync because
+the Lambda version has different optimizations than the backend version.
+See docs/s3-vector-utils-versions.md for details.
 """
 
 import os
@@ -16,6 +20,7 @@ def sync_files():
     dest_dir = Path("lambda_function")
     
     # Files to sync (only the core application files)
+    # NOTE: s3_vector_utils.py is excluded - see docs/s3-vector-utils-versions.md
     files_to_sync = [
         "constants.py",
         "logging_config.py", 
@@ -25,7 +30,7 @@ def sync_files():
         "bedrock_utils.py",
         "cache_manager.py",
         "model_config.py",
-        "s3_vector_utils.py",
+        # "s3_vector_utils.py",  # EXCLUDED - Different versions for Lambda vs Backend
         "token_utils.py",
         "lambda_handler.py",
         "logging_utils.py",
@@ -33,6 +38,7 @@ def sync_files():
     ]
     
     print("🔄 Syncing backend files to lambda_function directory...")
+    print("⚠️  Note: s3_vector_utils.py is excluded (different Lambda version exists)")
     
     # Create destination directory if it doesn't exist
     dest_dir.mkdir(exist_ok=True)
@@ -54,8 +60,12 @@ def sync_files():
     for file_name in synced_files:
         print(f"   • {file_name}")
     
+    print(f"\n📋 Excluded files (intentionally):")
+    print(f"   • s3_vector_utils.py (Lambda version has different optimizations)")
+    
     print("\n🎉 File sync completed successfully!")
     print("💡 Now run: ./deploy.sh deploy")
+    print("📖 For s3_vector_utils.py details, see: docs/s3-vector-utils-versions.md")
 
 if __name__ == "__main__":
     sync_files()

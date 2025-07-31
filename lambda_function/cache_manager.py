@@ -22,6 +22,9 @@ class CacheType(Enum):
     EMBEDDING = "embedding"         # Document embeddings
     METADATA = "metadata"           # Document metadata
     CONFIG = "config"               # Configuration data
+    PROMPT = "prompt"               # Bedrock prompt responses
+    CONTEXT = "context"             # Retrieved document context
+    GUARDRAIL = "guardrail"         # Guardrail results
 
 
 class CacheManager:
@@ -314,6 +317,36 @@ def get_cached_embedding(text: str) -> Optional[List[float]]:
 def cache_embedding(text: str, embedding: List[float]) -> bool:
     """Cache embedding."""
     return cache_manager.set(CacheType.EMBEDDING, text, embedding)
+
+
+def get_cached_prompt_response(prompt: str) -> Optional[str]:
+    """Get cached prompt response."""
+    return cache_manager.get(CacheType.PROMPT, prompt)
+
+
+def cache_prompt_response(prompt: str, response: str) -> bool:
+    """Cache prompt response."""
+    return cache_manager.set(CacheType.PROMPT, prompt, response)
+
+
+def get_cached_context(query_key: str) -> Optional[List[Dict[str, Any]]]:
+    """Get cached document context."""
+    return cache_manager.get(CacheType.CONTEXT, query_key)
+
+
+def cache_context_data(query_key: str, context: List[Dict[str, Any]]) -> bool:
+    """Cache document context."""
+    return cache_manager.set(CacheType.CONTEXT, query_key, context)
+
+
+def get_cached_guardrail_result(text: str) -> Optional[Dict[str, Any]]:
+    """Get cached guardrail result."""
+    return cache_manager.get(CacheType.GUARDRAIL, text)
+
+
+def cache_guardrail_result(text: str, result: Dict[str, Any]) -> bool:
+    """Cache guardrail result."""
+    return cache_manager.set(CacheType.GUARDRAIL, text, result)
 
 
 def clear_all_caches() -> bool:

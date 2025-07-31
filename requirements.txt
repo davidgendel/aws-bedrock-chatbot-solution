@@ -1,6 +1,6 @@
-# Core AWS SDK with S3 Vector support
-boto3>=1.35.0
-botocore>=1.35.0
+# Core AWS SDK with S3 Vector support - MINIMUM 1.39.17 for S3 Vectors
+boto3>=1.39.17
+botocore>=1.39.17
 
 # CDK for infrastructure
 aws-cdk-lib>=2.100.0

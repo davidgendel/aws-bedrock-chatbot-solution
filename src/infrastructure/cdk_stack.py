@@ -39,9 +39,10 @@ class ChatbotRagStack(cdk.Stack):
 
         # Create all infrastructure components in proper order
         self.s3_buckets = self._create_s3_buckets()
-        self.vector_indexes = self._create_vector_indexes()
         self.guardrail = self._create_bedrock_guardrail()
         self.lambda_role = self._create_lambda_role()
+        self.vector_indexes = self._create_vector_indexes()
+        self._complete_lambda_role_permissions()  # Complete permissions after vector indexes exist
         self.log_groups = self._create_log_groups()
         self.lambda_functions = self._create_lambda_functions()
         self.api_gateway = self._create_api_gateway()
@@ -76,31 +77,99 @@ class ChatbotRagStack(cdk.Stack):
             versioned=True,
             encryption=s3.BucketEncryption.S3_MANAGED,
             block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
-            removal_policy=cdk.RemovalPolicy.DESTROY
+            removal_policy=cdk.RemovalPolicy.DESTROY,
+            auto_delete_objects=True,
         )
         
+        # Create a Lambda layer with the latest boto3 version
+        boto3_layer = lambda_.LayerVersion(
+            self, "LatestBoto3Layer",
+            code=lambda_.Code.from_asset("layers/boto3-layer"),  # We'll create this directory
+            compatible_runtimes=[lambda_.Runtime.PYTHON_3_12],
+            compatible_architectures=[lambda_.Architecture.ARM_64],
+            description="Latest boto3 1.39.17+ with S3 Vectors support"
+        )
+
         # Custom resource to create S3 Vector bucket and index using correct S3 Vectors service API
         vector_setup_creator = lambda_.Function(
             self, "VectorSetupCreator",
             runtime=lambda_.Runtime.PYTHON_3_12,
+            architecture=lambda_.Architecture.ARM_64,  # Use ARM architecture for better performance
             handler="index.handler",
+            timeout=cdk.Duration.minutes(5),
+            memory_size=256,  # Increased memory for better performance
+            role=self.lambda_role,
+            layers=[boto3_layer],  # Use the latest boto3 layer
+            environment={
+                "PYTHONPATH": "/opt/python:/var/runtime",
+            },
             code=lambda_.Code.from_inline(f"""
+# Ensure we're using the latest boto3 version with S3 Vectors support
+import sys
+import os
+
+# Add the layer path to Python path for latest boto3
+layer_path = '/opt/python'
+if layer_path not in sys.path:
+    sys.path.insert(0, layer_path)
+
 import boto3
 import json
 import logging
+import urllib3
 
+# Log boto3 version for debugging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+def send_response(event, context, response_status, response_data=None, physical_resource_id=None, reason=None):
+    \"\"\"Send response to CloudFormation.\"\"\"
+    if response_data is None:
+        response_data = {{}}
+    
+    response_url = event['ResponseURL']
+    response_body = {{
+        'Status': response_status,
+        'Reason': reason or f'See CloudWatch Log Stream: {{context.log_stream_name}}',
+        'PhysicalResourceId': physical_resource_id or context.log_stream_name,
+        'StackId': event['StackId'],
+        'RequestId': event['RequestId'],
+        'LogicalResourceId': event['LogicalResourceId'],
+        'Data': response_data
+    }}
+    
+    json_response_body = json.dumps(response_body)
+    headers = {{'content-type': '', 'content-length': str(len(json_response_body))}}
+    
+    try:
+        http = urllib3.PoolManager()
+        response = http.request('PUT', response_url, body=json_response_body, headers=headers)
+        logger.info(f"CloudFormation response sent: {{response.status}}")
+    except Exception as e:
+        logger.error(f"Failed to send CloudFormation response: {{e}}")
+
 def handler(event, context):
     try:
+        logger.info(f"Using boto3 version: {{boto3.__version__}}")
+        logger.info(f"Event: {{json.dumps(event)}}")
+        
         request_type = event['RequestType']
         bucket_name = '{vector_bucket_name}'
         index_name = '{vector_config["index_name"]}'
+        vector_dimensions = {vector_config["dimensions"]}
+        similarity_metric = '{vector_config["similarity_metric"].lower()}'
+        physical_resource_id = f'{{bucket_name}}-{{index_name}}'
         
         if request_type == 'Create':
             # Create S3 Vector bucket and index using CORRECT S3 Vectors service API
-            s3vectors_client = boto3.client('s3vectors')
+            try:
+                s3vectors_client = boto3.client('s3vectors', region_name='{self.region}')
+                logger.info("Successfully created s3vectors client")
+                logger.info(f"Available services: {{boto3.Session().get_available_services()}}")
+            except Exception as client_error:
+                logger.error(f"Failed to create s3vectors client: {{client_error}}")
+                send_response(event, context, 'FAILED', reason=f"S3 Vectors service not available: {{client_error}}")
+                return
             
             # First create the vector bucket using CORRECT camelCase API
             try:
@@ -113,7 +182,8 @@ def handler(event, context):
                     logger.info(f"S3 Vector bucket {{bucket_name}} already exists")
                 else:
                     logger.error(f"Failed to create vector bucket: {{bucket_error}}")
-                    raise bucket_error
+                    send_response(event, context, 'FAILED', reason=f"Failed to create vector bucket: {{bucket_error}}")
+                    return
             
             # Then create the index using CORRECT camelCase API with separate parameters
             try:
@@ -121,8 +191,8 @@ def handler(event, context):
                     vectorBucketName=bucket_name,        # camelCase parameter
                     indexName=index_name,                # camelCase parameter
                     dataType='float32',                  # lowercase value
-                    dimension={vector_config["dimensions"]},  # direct parameter
-                    distanceMetric='{vector_config["similarity_metric"].lower()}'  # lowercase value
+                    dimension=vector_dimensions,         # integer value
+                    distanceMetric=similarity_metric     # evaluated string
                 )
                 logger.info(f"Created S3 Vector index: {{index_response}}")
             except Exception as index_error:
@@ -130,11 +200,26 @@ def handler(event, context):
                     logger.info(f"S3 Vector index {{index_name}} already exists")
                 else:
                     logger.error(f"Failed to create vector index: {{index_error}}")
-                    raise index_error
+                    send_response(event, context, 'FAILED', reason=f"Failed to create vector index: {{index_error}}")
+                    return
+            
+            # Success response
+            send_response(event, context, 'SUCCESS', 
+                         response_data={{'VectorBucketName': bucket_name, 'IndexName': index_name}},
+                         physical_resource_id=physical_resource_id)
             
         elif request_type == 'Delete':
             # Delete S3 Vector index and bucket using CORRECT camelCase API methods
-            s3vectors_client = boto3.client('s3vectors')
+            try:
+                s3vectors_client = boto3.client('s3vectors', region_name='{self.region}')
+            except Exception as client_error:
+                logger.warning(f"S3 Vectors client not available during deletion: {{client_error}}")
+                # Don't fail deletion if service is not available
+                send_response(event, context, 'SUCCESS', 
+                             response_data={{'VectorBucketName': bucket_name, 'IndexName': index_name}},
+                             physical_resource_id=physical_resource_id)
+                return
+                
             try:
                 # First delete the index using camelCase parameters
                 s3vectors_client.delete_index(
@@ -150,26 +235,26 @@ def handler(event, context):
                 logger.info(f"Deleted S3 Vector bucket: {{bucket_name}}")
             except Exception as e:
                 logger.warning(f"Failed to delete vector resources: {{e}}")
+                # Don't fail deletion if resources are already gone
+            
+            # Success response for deletion
+            send_response(event, context, 'SUCCESS', 
+                         response_data={{'VectorBucketName': bucket_name, 'IndexName': index_name}},
+                         physical_resource_id=physical_resource_id)
         
-        return {{
-            'Status': 'SUCCESS',
-            'PhysicalResourceId': f'{{bucket_name}}-{{index_name}}',
-            'Data': {{
-                'VectorBucketName': bucket_name,
-                'IndexName': index_name
-            }}
-        }}
+        elif request_type == 'Update':
+            # For updates, just return success (no changes needed)
+            send_response(event, context, 'SUCCESS', 
+                         response_data={{'VectorBucketName': bucket_name, 'IndexName': index_name}},
+                         physical_resource_id=physical_resource_id)
         
     except Exception as e:
-        logger.error(f"Error: {{e}}")
-        return {{
-            'Status': 'FAILED',
-            'Reason': str(e),
-            'PhysicalResourceId': f'{{bucket_name}}-{{index_name}}'
-        }}
-            """),
-            timeout=cdk.Duration.minutes(5),
-            role=self.lambda_role
+        logger.error(f"Unexpected error: {{e}}")
+        import traceback
+        logger.error(f"Traceback: {{traceback.format_exc()}}")
+        send_response(event, context, 'FAILED', reason=f"Unexpected error: {{e}}")
+        return
+            """)
         )
         
         # Custom resource to trigger vector setup
@@ -182,141 +267,39 @@ def handler(event, context):
             }
         )
         
+        # Create a proxy object for the S3 Vector bucket that other methods can reference
+        # This is needed because S3 Vectors buckets are created via API calls, not CDK constructs
+        class VectorBucketProxy:
+            def __init__(self, bucket_name: str, account: str, region: str):
+                self.bucket_name = bucket_name
+                self.bucket_arn = f"arn:aws:s3vectors:{region}:{account}:bucket/{bucket_name}"
+        
+        vector_bucket_proxy = VectorBucketProxy(vector_bucket_name, self.account, self.region)
+        
         return {
             "config": vector_config,
             "metadata_bucket": metadata_bucket,
-            "vector_setup_resource": vector_setup_resource
+            "vector_setup_resource": vector_setup_resource,
+            "vector_bucket": vector_bucket_proxy  # Add the missing vector_bucket reference
         }
-                Name=index_name,
-                VectorConfiguration={{
-                    'Dimensions': {vector_config["dimensions"]},
-                    'SimilarityMetric': '{vector_config["similarity_metric"]}'
-                }},
-                IndexConfiguration={{
-                    'Type': '{vector_config["index_type"]}',
-                    'HnswConfiguration': {{
-                        'EfConstruction': {vector_config["ef_construction"]},
-                        'M': {vector_config["m"]}
-                    }}
-                }}
+
+    def _complete_lambda_role_permissions(self) -> None:
+        """Complete Lambda role permissions after vector indexes are created."""
+        # Add permissions for metadata bucket now that it exists
+        self.lambda_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "s3:GetObject", 
+                    "s3:PutObject", 
+                    "s3:DeleteObject",
+                    "s3:ListBucket"
+                ],
+                resources=[
+                    self.vector_indexes["metadata_bucket"].bucket_arn,
+                    f"{self.vector_indexes['metadata_bucket'].bucket_arn}/*"
+                ],
             )
-            
-            logger.info(f"Created S3 Vector index: {{response}}")
-            
-        elif request_type == 'Delete':
-            # Delete S3 Vector index
-            s3vectors_client = boto3.client('s3vectors')
-            try:
-                s3vectors_client.delete_index(Name=index_name)
-                logger.info(f"Deleted S3 Vector index: {{index_name}}")
-            except Exception as e:
-                logger.warning(f"Failed to delete vector index: {{e}}")
-        
-        return {{
-            'Status': 'SUCCESS',
-            'PhysicalResourceId': f'{{index_name}}',
-            'Data': {{
-                'IndexName': index_name
-            }}
-        }}
-        
-    except Exception as e:
-        logger.error(f"Error: {{e}}")
-        return {{
-            'Status': 'FAILED',
-            'Reason': str(e),
-            'PhysicalResourceId': f'{{index_name}}'
-        }}
-            """),
-            timeout=cdk.Duration.minutes(5),
-            role=self.lambda_role
         )
-        
-        # Custom resource to trigger vector index creation
-        vector_index_resource = cdk.CustomResource(
-            self, "VectorIndexResource",
-            service_token=vector_index_creator.function_arn,
-            properties={
-                "IndexName": vector_config["index_name"]
-            }
-        )
-        
-        return {
-            "config": vector_config,
-            "metadata_bucket": metadata_bucket,
-            "vector_index_resource": vector_index_resource
-        }
-            s3_client = boto3.client('s3')
-            
-            # Create vector index
-            response = s3_client.create_vector_index(
-                Bucket=bucket_name,
-                VectorIndexName=index_name,
-                VectorIndexConfiguration={{
-                    'Dimensions': {vector_config["dimensions"]},
-                    'SimilarityMetric': '{vector_config["similarity_metric"]}',
-                    'IndexType': '{vector_config["index_type"]}',
-                    'HnswConfiguration': {{
-                        'EfConstruction': {vector_config["ef_construction"]},
-                        'M': {vector_config["m"]}
-                    }}
-                }}
-            )
-            
-            logger.info(f"Created S3 Vector index: {{response}}")
-            
-        elif request_type == 'Delete':
-            # Delete S3 Vector index
-            s3_client = boto3.client('s3')
-            try:
-                s3_client.delete_vector_index(
-                    Bucket=bucket_name,
-                    VectorIndexName=index_name
-                )
-                logger.info(f"Deleted S3 Vector index: {{index_name}}")
-            except Exception as e:
-                logger.warning(f"Failed to delete vector index: {{e}}")
-        
-        return {{
-            'Status': 'SUCCESS',
-            'PhysicalResourceId': f'{{bucket_name}}-{{index_name}}',
-            'Data': {{
-                'BucketName': bucket_name,
-                'IndexName': index_name
-            }}
-        }}
-        
-    except Exception as e:
-        logger.error(f"Error: {{e}}")
-        return {{
-            'Status': 'FAILED',
-            'Reason': str(e),
-            'PhysicalResourceId': f'{{bucket_name}}-{{index_name}}'
-        }}
-            """),
-            timeout=cdk.Duration.minutes(5),
-            role=self.lambda_role
-        )
-        
-        # Custom resource to trigger vector index creation
-        vector_index_resource = cdk.CustomResource(
-            self, "VectorIndexResource",
-            service_token=vector_index_creator.function_arn,
-            properties={
-                "BucketName": vector_bucket_name,
-                "IndexName": vector_config["index_name"]
-            }
-        )
-        
-        # Ensure bucket is created before index
-        vector_index_resource.node.add_dependency(vector_bucket)
-        
-        return {
-            "config": vector_config,
-            "vector_bucket": vector_bucket,
-            "metadata_bucket": metadata_bucket,
-            "vector_index_resource": vector_index_resource
-        }
 
     def _create_s3_buckets(self) -> Dict[str, s3.Bucket]:
         """Create S3 buckets for documents and website assets."""
@@ -457,27 +440,7 @@ def handler(event, context):
             )
         )
 
-        # Add permissions for S3 Vectors (integrated into S3 service)
-        lambda_role.add_to_policy(
-            iam.PolicyStatement(
-                actions=[
-                    "s3:PutVectorIndex",
-                    "s3:GetVectorIndex", 
-                    "s3:DeleteVectorIndex",
-                    "s3:ListVectorIndexes",
-                    "s3:PutVectors",
-                    "s3:QueryVectors",
-                    "s3:DeleteVectors",
-                    "s3:GetVectors",
-                ],
-                resources=[
-                    self.vector_indexes["vector_bucket"].bucket_arn,
-                    f"{self.vector_indexes['vector_bucket'].bucket_arn}/*",
-                ],
-            )
-        )
-
-        # Add permissions for S3 Vectors service
+        # Add permissions for S3 Vectors service (will be refined after vector indexes are created)
         lambda_role.add_to_policy(
             iam.PolicyStatement(
                 actions=[
@@ -499,7 +462,7 @@ def handler(event, context):
             )
         )
 
-        # Add permissions for regular S3 buckets (documents and metadata)
+        # Add permissions for regular S3 buckets (documents) - metadata bucket will be added later
         lambda_role.add_to_policy(
             iam.PolicyStatement(
                 actions=[
@@ -510,13 +473,7 @@ def handler(event, context):
                 ],
                 resources=[
                     self.s3_buckets["document_bucket"].bucket_arn,
-                    f"{self.s3_buckets['document_bucket'].bucket_arn}/*",
-                    self.vector_indexes["metadata_bucket"].bucket_arn,
-                    f"{self.vector_indexes['metadata_bucket'].bucket_arn}/*"
-                ],
-            )
-        )
-                    f"{self.vector_indexes['metadata_bucket'].bucket_arn}/*",
+                    f"{self.s3_buckets['document_bucket'].bucket_arn}/*"
                 ],
             )
         )
