@@ -639,7 +639,7 @@ Actual costs may vary based on:
 1. **Check Python version**: `python3 --version` (need 3.12+)
 2. **Update pip**: `python3 -m pip install --upgrade pip`
 3. **Use virtual environment**: `python3 -m venv .venv && source .venv/bin/activate`
-4. **Install dependencies manually**: `pip install -r requirements.txt`
+4. **For local script usage only**: `pip install -r scripts/requirements.txt`
 
 ### Q: How do I get support?
 
