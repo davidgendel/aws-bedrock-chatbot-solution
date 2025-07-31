@@ -147,12 +147,11 @@ For production, you can create a more restrictive policy after deployment.
 
 **Text Documents:**
 - PDF (including scanned PDFs with OCR)
-- Microsoft Word (DOCX)
 - Plain text (TXT)
 - Markdown (MD)
-
-**Web & Data:**
 - HTML pages
+
+**Data Formats:**
 - CSV files
 - JSON documents
 
@@ -188,7 +187,7 @@ For production, you can create a more restrictive policy after deployment.
 python3 -m scripts.upload_documents --folder ./documents
 
 # Upload specific file types
-python3 -m scripts.upload_documents --folder ./docs --types pdf,docx,txt
+python3 -m scripts.upload_documents --folder ./docs --types pdf,txt,md
 
 # Batch processing with custom size
 python3 -m scripts.upload_documents --folder ./docs --batch-size 5
@@ -505,7 +504,7 @@ Actual costs may vary based on:
 ### Q: What's included in the monthly cost?
 
 **A:** Everything needed to run your chatbot:
-- **Database hosting** (RDS PostgreSQL)
+- **Vector storage** (S3 Vectors for embeddings)
 - **AI processing** (Amazon Bedrock Nova Lite)
 - **Web hosting** (Lambda, API Gateway, CloudFront)
 - **Security** (WAF, guardrails)
@@ -516,7 +515,7 @@ Actual costs may vary based on:
 
 **A:** Cost optimization strategies:
 1. **Disable provisioned concurrency** if you don't need instant responses
-2. **Use smaller database instance** (db.t4g.nano for very light usage)
+2. **Clean up old vectors** periodically to reduce storage costs
 3. **Implement aggressive rate limiting** to prevent abuse
 4. **Clean up old documents** periodically
 5. **Monitor usage** and adjust configuration
@@ -548,7 +547,7 @@ Actual costs may vary based on:
 - **Medium business**: 1000+ documents
 
 **Technical limits**:
-- Database storage: 20GB (configurable)
+- Vector storage: Scales automatically with S3 Vectors
 - Individual file size: 10MB recommended
 - Total processing time: Depends on document complexity
 
@@ -577,7 +576,7 @@ Actual costs may vary based on:
 
 **A:** Your data security:
 - **Documents**: Stored in your private AWS S3 bucket
-- **Database**: In your private RDS instance
+- **Vectors**: Stored in your private S3 Vector buckets
 - **Processing**: Happens in your AWS account
 - **AI processing**: Uses Amazon Bedrock (no data retention)
 - **Encryption**: All data encrypted at rest and in transit
@@ -603,15 +602,15 @@ Actual costs may vary based on:
 
 **A:** Backup options:
 - **Documents**: Automatically backed up in S3
-- **Database**: Automatic daily backups (7-day retention)
+- **Vectors**: Stored durably in S3 Vector buckets
 - **Configuration**: Version controlled in your repository
-- **Manual backup**: Export database and S3 contents
+- **Manual backup**: Export documents and configuration
 
 ### Q: What about scaling?
 
 **A:** Auto-scaling features:
 - **Lambda functions**: Scale automatically with demand
-- **Database**: Can be upgraded to larger instances
+- **Vector storage**: S3 Vectors scales automatically
 - **CDN**: CloudFront handles global traffic
 - **Rate limiting**: Prevents abuse and controls costs
 
@@ -672,9 +671,9 @@ Actual costs may vary based on:
 ### Q: Can I migrate to a different AWS account?
 
 **A:** Migration process:
-1. **Export data**: Backup documents and database
+1. **Export data**: Backup documents and configuration
 2. **Deploy to new account**: Run deployment in target account
-3. **Import data**: Upload documents and restore database
+3. **Import data**: Upload documents to rebuild vectors
 4. **Update DNS**: Point domain to new CloudFront distribution
 5. **Test thoroughly**: Verify all functionality works
 

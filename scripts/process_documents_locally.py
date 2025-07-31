@@ -72,7 +72,7 @@ class AWSClientManager:
         self.region = region
         self._clients = {}
         self._client_creation_time = {}
-        self._refresh_threshold = timedelta(minutes=30)  # Refresh before 1-hour expiry
+        self._refresh_threshold = timedelta(minutes=15)  # Refresh every 15 minutes to be very safe
         
     def _should_refresh_client(self, service_name: str) -> bool:
         """Check if client should be refreshed based on age."""
@@ -83,12 +83,14 @@ class AWSClientManager:
         return age > self._refresh_threshold
     
     def _create_client(self, service_name: str):
-        """Create a new AWS client."""
+        """Create a new AWS client with fresh credentials."""
         try:
-            client = boto3.client(service_name, region_name=self.region)
+            # Force new session to get fresh credentials
+            session = boto3.Session()
+            client = session.client(service_name, region_name=self.region)
             self._clients[service_name] = client
             self._client_creation_time[service_name] = datetime.now()
-            logger.debug(f"Created new {service_name} client")
+            logger.info(f"Created new {service_name} client with fresh credentials")
             return client
         except Exception as e:
             logger.error(f"Failed to create {service_name} client: {e}")
@@ -104,7 +106,7 @@ class AWSClientManager:
     
     def refresh_all_clients(self):
         """Force refresh of all clients."""
-        logger.info("Refreshing all AWS clients...")
+        logger.info("Refreshing all AWS clients with fresh credentials...")
         for service_name in list(self._clients.keys()):
             self._create_client(service_name)
 
@@ -150,18 +152,42 @@ class LocalDocumentProcessor:
                 return func(*args, **kwargs)
             except ClientError as e:
                 error_code = e.response.get('Error', {}).get('Code', '')
-                if error_code in ['ExpiredToken', 'TokenRefreshRequired', 'InvalidToken']:
-                    if attempt < max_retries - 1:
-                        logger.warning(f"Token expired (attempt {attempt + 1}/{max_retries}), refreshing clients...")
-                        self.aws_manager.refresh_all_clients()
-                        time.sleep(2)  # Brief pause before retry
-                        continue
+                error_message = str(e)
+                
+                # Check for various token expiration error patterns
+                is_token_error = (
+                    error_code in [
+                        'ExpiredToken', 'TokenRefreshRequired', 'InvalidToken', 
+                        'UnauthorizedOperation', 'ExpiredTokenException',  # ← Added Bedrock-specific error
+                        'InvalidTokenException', 'TokenExpiredException'
+                    ] or
+                    'expired' in error_message.lower() or
+                    'token' in error_message.lower() or
+                    'unauthorized' in error_message.lower()
+                )
+                
+                if is_token_error and attempt < max_retries - 1:
+                    logger.warning(f"Token expired (attempt {attempt + 1}/{max_retries}), refreshing clients...")
+                    logger.warning(f"Error details: {error_code} - {error_message}")
+                    self.aws_manager.refresh_all_clients()
+                    time.sleep(3)  # Longer pause to ensure fresh credentials
+                    continue
                 raise
             except (TokenRetrievalError, NoCredentialsError) as e:
                 if attempt < max_retries - 1:
                     logger.warning(f"Credential error (attempt {attempt + 1}/{max_retries}), refreshing clients...")
                     self.aws_manager.refresh_all_clients()
-                    time.sleep(2)
+                    time.sleep(3)
+                    continue
+                raise
+            except Exception as e:
+                # For other exceptions, check if it might be credential-related
+                error_message = str(e).lower()
+                if ('credential' in error_message or 'unauthorized' in error_message or 'expired' in error_message) and attempt < max_retries - 1:
+                    logger.warning(f"Possible credential error (attempt {attempt + 1}/{max_retries}), refreshing clients...")
+                    logger.warning(f"Error details: {str(e)}")
+                    self.aws_manager.refresh_all_clients()
+                    time.sleep(3)
                     continue
                 raise
         
@@ -333,10 +359,9 @@ class LocalDocumentProcessor:
             # Return zero vector as fallback
             return [0.0] * self.config["vectorIndex"]["dimensions"]
     
-    def _store_vectors_to_s3(self, document_id: str, chunks: List[Dict], embeddings: List[List[float]]):
-        """Store vectors and metadata to S3."""
-        def _store_operation():
-            # Get bucket names from CloudFormation stack
+    def _get_bucket_names(self):
+        """Get bucket names from CloudFormation with retry logic."""
+        def _get_buckets():
             cf_client = self._get_cloudformation_client()
             response = cf_client.describe_stacks(StackName='ChatbotRagStack')
             
@@ -350,41 +375,76 @@ class LocalDocumentProcessor:
             if not vector_bucket or not metadata_bucket:
                 raise ValueError(f"Could not find bucket names in stack outputs. Available outputs: {list(outputs.keys())}")
             
-            logger.info(f"Using vector bucket: {vector_bucket}, metadata bucket: {metadata_bucket}")
+            return vector_bucket, metadata_bucket
+        
+        return self._retry_with_refresh(_get_buckets)
+    
+    def _store_vectors_to_s3(self, document_id: str, chunks: List[Dict], embeddings: List[List[float]]):
+        """Store vectors and metadata using S3 Vector buckets."""
+        logger.info("Storing vectors and metadata...")
+        
+        # Get bucket names with retry logic
+        vector_bucket, metadata_bucket = self._get_bucket_names()
+        logger.info(f"Using vector bucket: {vector_bucket}, metadata bucket: {metadata_bucket}")
+        
+        # Prepare chunks with embeddings for S3 Vector API
+        chunks_with_embeddings = []
+        for chunk, embedding in zip(chunks, embeddings):
+            chunk_with_embedding = chunk.copy()
+            chunk_with_embedding["embedding"] = embedding
+            chunks_with_embeddings.append(chunk_with_embedding)
+        
+        # Set environment variables for S3 Vector utils
+        os.environ["VECTOR_BUCKET_NAME"] = vector_bucket
+        os.environ["VECTOR_INDEX_NAME"] = self.config["vectorIndex"]["name"]
+        
+        # Import S3 Vector utilities
+        try:
+            # Add the src/backend directory to Python path
+            import sys
+            backend_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'src', 'backend')
+            if backend_path not in sys.path:
+                sys.path.insert(0, backend_path)
             
-            s3_client = self._get_s3_client()
+            from s3_vector_utils import store_document_vectors, store_document_metadata
             
-            # Store vectors in batches to handle large documents
-            batch_size = 50  # Process 50 chunks at a time
-            total_chunks = len(chunks)
+            # Store vectors using S3 Vector API
+            success = store_document_vectors(document_id, chunks_with_embeddings)
+            if not success:
+                raise Exception("Failed to store vectors using S3 Vector API")
             
-            for batch_start in range(0, total_chunks, batch_size):
-                batch_end = min(batch_start + batch_size, total_chunks)
-                batch_chunks = chunks[batch_start:batch_end]
-                batch_embeddings = embeddings[batch_start:batch_end]
-                
-                # Store this batch
-                for i, (chunk, embedding) in enumerate(zip(batch_chunks, batch_embeddings)):
-                    actual_index = batch_start + i
-                    vector_key = f"{document_id}/chunk_{actual_index}.json"
-                    vector_data = {
-                        "document_id": document_id,
-                        "chunk_index": actual_index,
-                        "content": chunk["content"],
-                        "embedding": embedding,
-                        "metadata": chunk["metadata"]
-                    }
-                    
-                    s3_client.put_object(
-                        Bucket=vector_bucket,
-                        Key=vector_key,
-                        Body=json.dumps(vector_data),
-                        ContentType='application/json'
-                    )
-                
-                logger.info(f"Stored batch {batch_start + 1}-{batch_end} of {total_chunks} chunks")
+            # Store document metadata in regular S3 bucket
+            document_metadata = {
+                "document_id": document_id,
+                "total_chunks": len(chunks),
+                "processed_at": datetime.utcnow().isoformat(),
+                "vector_dimensions": len(embeddings[0]) if embeddings else 0,
+                "content_summary": chunks[0]["content"][:200] + "..." if chunks else ""
+            }
             
-            # Store document metadata
+            # Store metadata in S3 bucket
+            def _store_metadata():
+                s3_client = self._get_s3_client()
+                s3_client.put_object(
+                    Bucket=metadata_bucket,
+                    Key=f"{document_id}.json",
+                    Body=json.dumps(document_metadata),
+                    ContentType='application/json'
+                )
+            
+            self._retry_with_refresh(_store_metadata)
+            logger.info(f"Successfully stored {len(chunks)} vectors and metadata for document {document_id}")
+            
+        except ImportError as e:
+            logger.error(f"S3 Vector utilities not available ({e})")
+            raise Exception("S3 Vector utilities required but not available")
+        except Exception as e:
+            logger.error(f"Failed to store vectors: {e}")
+            raise
+            logger.info(f"Stored batch {batch_start + 1}-{batch_end} of {total_chunks} chunks")
+        
+        # Store document metadata with retry logic
+        def _store_metadata():
             metadata = {
                 "document_id": document_id,
                 "chunk_count": len(chunks),
@@ -392,20 +452,16 @@ class LocalDocumentProcessor:
                 "total_chunks": len(chunks)
             }
             
+            s3_client = self._get_s3_client()
             s3_client.put_object(
                 Bucket=metadata_bucket,
                 Key=f"{document_id}.json",
                 Body=json.dumps(metadata),
                 ContentType='application/json'
             )
-            
-            logger.info(f"Stored {len(chunks)} chunks for document {document_id}")
         
-        try:
-            self._retry_with_refresh(_store_operation)
-        except Exception as e:
-            logger.error(f"Failed to store vectors to S3: {e}")
-            raise
+        self._retry_with_refresh(_store_metadata)
+        logger.info(f"Stored {len(chunks)} chunks for document {document_id}")
     
     def process_file(self, file_path: str, document_id: str = None) -> Dict[str, Any]:
         """Process a single file."""
@@ -440,16 +496,35 @@ class LocalDocumentProcessor:
             # Generate embeddings for all chunks
             logger.info("Generating embeddings...")
             embeddings = []
-            for i, chunk in enumerate(chunks):
-                try:
-                    embedding = self._generate_embeddings(chunk["content"])
-                    embeddings.append(embedding)
-                    if (i + 1) % 10 == 0:
-                        logger.info(f"Generated embeddings for {i + 1}/{len(chunks)} chunks")
-                except Exception as e:
-                    logger.error(f"Failed to generate embedding for chunk {i}: {e}")
-                    # Use zero vector as fallback
-                    embeddings.append([0.0] * self.config["vectorIndex"]["dimensions"])
+            
+            # Process embeddings in batches to handle token refresh better
+            batch_size = 20  # Process 20 embeddings at a time
+            total_chunks = len(chunks)
+            
+            for batch_start in range(0, total_chunks, batch_size):
+                batch_end = min(batch_start + batch_size, total_chunks)
+                batch_chunks = chunks[batch_start:batch_end]
+                
+                # Proactively refresh clients before each batch
+                if batch_start > 0:  # Don't refresh on first batch
+                    logger.info(f"Proactively refreshing clients before batch {batch_start + 1}-{batch_end}")
+                    self.aws_manager.refresh_all_clients()
+                
+                # Process this batch
+                for i, chunk in enumerate(batch_chunks):
+                    actual_index = batch_start + i
+                    try:
+                        embedding = self._generate_embeddings(chunk["content"])
+                        embeddings.append(embedding)
+                        
+                        if (actual_index + 1) % 10 == 0:
+                            logger.info(f"Generated embeddings for {actual_index + 1}/{total_chunks} chunks")
+                    except Exception as e:
+                        logger.error(f"Failed to generate embedding for chunk {actual_index}: {e}")
+                        # Use zero vector as fallback
+                        embeddings.append([0.0] * self.config["vectorIndex"]["dimensions"])
+                
+                logger.info(f"Completed embedding batch {batch_start + 1}-{batch_end} of {total_chunks} chunks")
             
             # Store vectors and metadata
             logger.info("Storing vectors and metadata...")
@@ -526,41 +601,49 @@ class LocalDocumentProcessor:
         return results
     
     def delete_document(self, document_id: str) -> Dict[str, Any]:
-        """Delete a document and its vectors."""
-        def _delete_operation():
-            # Get bucket names from CloudFormation stack
-            cf_client = self._get_cloudformation_client()
-            response = cf_client.describe_stacks(StackName='ChatbotRagStack')
-            
-            outputs = {}
-            for output in response['Stacks'][0].get('Outputs', []):
-                outputs[output['OutputKey']] = output['OutputValue']
-            
-            vector_bucket = outputs.get('VectorBucketName')
-            metadata_bucket = outputs.get('MetadataBucketName')
-            
-            s3_client = self._get_s3_client()
-            
-            # Delete all chunks for this document
-            paginator = s3_client.get_paginator('list_objects_v2')
-            for page in paginator.paginate(Bucket=vector_bucket, Prefix=f"{document_id}/"):
-                if 'Contents' in page:
-                    for obj in page['Contents']:
-                        s3_client.delete_object(Bucket=vector_bucket, Key=obj['Key'])
-            
-            # Delete metadata
-            try:
-                s3_client.delete_object(Bucket=metadata_bucket, Key=f"{document_id}.json")
-            except:
-                pass  # Metadata might not exist
-            
-            logger.info(f"Successfully deleted document: {document_id}")
+        """Delete a document and its vectors from S3 Vector bucket."""
+        logger.info(f"Deleting document: {document_id}")
         
         try:
-            self._retry_with_refresh(_delete_operation)
+            # Get bucket names with retry logic
+            vector_bucket, metadata_bucket = self._get_bucket_names()
+            
+            # Set environment variables for S3 Vector utils
+            os.environ["VECTOR_BUCKET_NAME"] = vector_bucket
+            os.environ["VECTOR_INDEX_NAME"] = self.config["vectorIndex"]["name"]
+            
+            # Import S3 Vector utilities
+            try:
+                import sys
+                backend_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'src', 'backend')
+                if backend_path not in sys.path:
+                    sys.path.insert(0, backend_path)
+                
+                from s3_vector_utils import delete_document_vectors
+                
+                # Delete vectors using S3 Vector API
+                success = delete_document_vectors(document_id)
+                if not success:
+                    logger.warning(f"Failed to delete vectors for document {document_id}")
+                
+            except ImportError as e:
+                logger.warning(f"S3 Vector utilities not available ({e}), skipping vector deletion")
+            
+            # Delete metadata from S3 bucket with retry logic
+            def _delete_metadata():
+                s3_client = self._get_s3_client()
+                try:
+                    s3_client.delete_object(Bucket=metadata_bucket, Key=f"{document_id}.json")
+                except:
+                    pass  # Metadata might not exist
+            
+            self._retry_with_refresh(_delete_metadata)
+            
+            logger.info(f"Successfully deleted document: {document_id}")
             return {"status": "success", "document_id": document_id}
         except Exception as e:
             logger.error(f"Failed to delete document {document_id}: {e}")
+            return {"status": "error", "document_id": document_id, "error": str(e)}
             return {"status": "error", "error": str(e)}
 
 def main():

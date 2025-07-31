@@ -574,63 +574,57 @@ python3 scripts/recovery_manager.py --analyze --suggest
   export AWS_CA_BUNDLE=/path/to/corporate/ca-bundle.crt
   ```
 
-## 🗄️ Database Issues
+### S3 Vectors Storage Problems
 
-### Connection Problems
-
-**Issue**: "Cannot connect to database"
-- **Cause**: Security group rules or network configuration
+**Issue**: "S3 Vectors index not found"
+- **Cause**: Vector index not created or misconfigured
 - **Solution**:
-  1. Check RDS instance status in AWS Console
-  2. Verify security group allows inbound connections on port 5432
-  3. For regions other than us-east-1, update security group rules:
-     ```bash
-     # Get your database security group ID
-     aws cloudformation describe-stacks --stack-name "ChatbotRagStack" \
-       --query "Stacks[0].Outputs[?OutputKey=='DatabaseSecurityGroupId'].OutputValue" \
-       --output text
-     
-     # Add rule for your region (replace sg-xxxxxxxx and REGION)
-     aws ec2 authorize-security-group-ingress \
-       --group-id sg-xxxxxxxx \
-       --protocol tcp \
-       --port 5432 \
-       --cidr "0.0.0.0/0" \
-       --region REGION
-     ```
+  ```bash
+  # Check if index exists
+  python3 -c "
+  from src.backend.s3_vector_utils import list_vector_indexes
+  print(list_vector_indexes())
+  "
+  
+  # Create index manually
+  python3 -c "
+  from src.backend.s3_vector_utils import create_vector_index
+  create_vector_index('chatbot-index')
+  "
+  ```
 
-**Issue**: "Database credentials not found"
-- **Cause**: Secrets Manager secret not created or accessible
+**Issue**: "Vector similarity search slow"
+- **Cause**: Index not optimized or too many vectors
 - **Solution**:
-  1. Check Secrets Manager in AWS Console
-  2. Verify Lambda has permission to access secret
-  3. Manually create secret if missing:
-     ```bash
-     aws secretsmanager create-secret \
-       --name "ChatbotRagStack-DatabaseSecret" \
-       --description "Database credentials for RAG chatbot" \
-       --secret-string '{"username":"postgres","password":"your-password","host":"your-host","port":5432,"dbname":"chatbot"}'
-     ```
+  ```bash
+  # Optimize vector index
+  python3 scripts/manage_vector_indexes.py --optimize
+  
+  # Check optimization status
+  python3 scripts/manage_vector_indexes.py --status
+  
+  # Clean up old vectors
+  python3 scripts/cleanup_vectors.py --days 90
+  ```
 
-### Performance Issues
-
-**Issue**: "Database queries are slow"
-- **Cause**: Insufficient database resources or missing indexes
+**Issue**: "Document processing failed"
+- **Cause**: Unsupported format or processing errors
 - **Solution**:
-  1. Upgrade RDS instance type (t4g.micro → t4g.small)
-  2. Check for missing indexes on vector columns
-  3. Monitor database performance in CloudWatch
-  4. Consider read replicas for high-traffic scenarios
-
-**Issue**: "Database storage full"
-- **Cause**: Too many documents or large document sizes
-- **Solution**:
-  1. Increase allocated storage in RDS
-  2. Clean up old document chunks:
-     ```bash
-     python -m scripts.cleanup_database --older-than 30
-     ```
-  3. Optimize document chunking strategy
+  ```bash
+  # Check supported formats
+  python3 -c "
+  from src.backend.document_processor import handler
+  result = handler({'action': 'status'}, None)
+  print('Supported formats:', result['body']['supported_file_types'])
+  "
+  
+  # Process document manually
+  python3 -c "
+  from src.backend.document_processor import process_document
+  result = process_document('your-bucket', 'document.pdf')
+  print(result)
+  "
+  ```
 
 ## 🤖 API and Lambda Issues
 
@@ -846,7 +840,7 @@ python3 scripts/recovery_manager.py --analyze --suggest
 
 ### Data Recovery
 
-1. **Database issues**: Restore from automated backup
+1. **Vector storage issues**: Re-upload documents to rebuild vectors
 2. **Document loss**: Re-upload from local documents folder
 3. **Configuration loss**: Restore from backup files in `.deployment_backup`
 

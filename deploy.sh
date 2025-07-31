@@ -177,6 +177,219 @@ handle_error() {
 # Set up error trap
 trap 'handle_error ${LINENO} "$BASH_COMMAND"' ERR
 
+# Clean up S3 buckets and S3 Vector resources before CloudFormation deletion
+empty_s3_buckets() {
+    local stack_name="$1"
+    echo -e "${CYAN}🗑️  Cleaning up S3 buckets and S3 Vector resources before stack deletion...${NC}"
+    
+    # Function to delete S3 Vector resources using S3 Vectors service
+    delete_vector_resources() {
+        local bucket_name="$1"
+        local index_name="$2"
+        
+        echo -e "${CYAN}   🗑️  Deleting S3 Vector resources: index $index_name in bucket $bucket_name${NC}"
+        
+        # First delete the index
+        if aws s3vectors get-index --vector-bucket-name "$bucket_name" --index-name "$index_name" >/dev/null 2>&1; then
+            echo -e "${CYAN}      Deleting S3 Vector index...${NC}"
+            if aws s3vectors delete-index --vector-bucket-name "$bucket_name" --index-name "$index_name" 2>/dev/null; then
+                echo -e "${GREEN}   ✅ Successfully deleted S3 Vector index: $index_name${NC}"
+            else
+                echo -e "${YELLOW}   ⚠️  Failed to delete S3 Vector index: $index_name${NC}"
+            fi
+        else
+            echo -e "${YELLOW}   ⚠️  S3 Vector index $index_name does not exist or is not accessible${NC}"
+        fi
+        
+        # Then delete the vector bucket
+        if aws s3vectors get-vector-bucket --vector-bucket-name "$bucket_name" >/dev/null 2>&1; then
+            echo -e "${CYAN}      Deleting S3 Vector bucket...${NC}"
+            if aws s3vectors delete-vector-bucket --vector-bucket-name "$bucket_name" 2>/dev/null; then
+                echo -e "${GREEN}   ✅ Successfully deleted S3 Vector bucket: $bucket_name${NC}"
+            else
+                echo -e "${YELLOW}   ⚠️  Failed to delete S3 Vector bucket: $bucket_name${NC}"
+            fi
+        else
+            echo -e "${YELLOW}   ⚠️  S3 Vector bucket $bucket_name does not exist or is not accessible${NC}"
+        fi
+    }
+    
+    # Function to empty a single S3 bucket with comprehensive cleanup
+    empty_single_bucket() {
+        local bucket_name="$1"
+        local bucket_type="$2"
+        
+        echo -e "${CYAN}   🗑️  Emptying $bucket_type bucket: $bucket_name${NC}"
+        
+        # Check if bucket exists
+        if ! aws s3api head-bucket --bucket "$bucket_name" 2>/dev/null; then
+            echo -e "${YELLOW}   ⚠️  Bucket $bucket_name does not exist or is not accessible${NC}"
+            return 0
+        fi
+        
+        # Get object count for progress tracking
+        local object_count
+        object_count=$(aws s3 ls "s3://$bucket_name" --recursive --summarize 2>/dev/null | grep "Total Objects:" | awk '{print $3}' || echo "0")
+        
+        if [ "$object_count" -eq 0 ]; then
+            echo -e "${GREEN}   ✅ Bucket $bucket_name is already empty${NC}"
+            return 0
+        fi
+        
+        echo -e "${CYAN}      Found $object_count objects to delete${NC}"
+        
+        # Delete all current objects
+        echo -e "${CYAN}      Deleting current objects...${NC}"
+        aws s3 rm "s3://$bucket_name" --recursive --quiet 2>/dev/null || {
+            echo -e "${YELLOW}      ⚠️  Some objects may have failed to delete${NC}"
+        }
+        
+        # Handle versioned objects if versioning is enabled
+        echo -e "${CYAN}      Checking for versioned objects...${NC}"
+        local versions_exist=false
+        
+        # Check if there are any object versions (with better error handling)
+        if aws s3api list-object-versions --bucket "$bucket_name" --max-items 1 --output json 2>/dev/null | \
+           jq -e '.Versions // .DeleteMarkers | length > 0' >/dev/null 2>&1; then
+            versions_exist=true
+            echo -e "${CYAN}      Found versioned objects, deleting all versions...${NC}"
+            
+            # Delete all object versions with improved error handling
+            aws s3api list-object-versions --bucket "$bucket_name" --output json --query 'Versions[].{Key:Key,VersionId:VersionId}' 2>/dev/null | \
+            jq -r '.[]? | select(.VersionId != null) | "\(.Key)\t\(.VersionId)"' | \
+            while IFS=$'\t' read -r key version_id; do
+                if [ -n "$key" ] && [ -n "$version_id" ]; then
+                    aws s3api delete-object --bucket "$bucket_name" --key "$key" --version-id "$version_id" >/dev/null 2>&1 || true
+                fi
+            done
+            
+            # Delete all delete markers with improved error handling
+            aws s3api list-object-versions --bucket "$bucket_name" --output json --query 'DeleteMarkers[].{Key:Key,VersionId:VersionId}' 2>/dev/null | \
+            jq -r '.[]? | select(.VersionId != null) | "\(.Key)\t\(.VersionId)"' | \
+            while IFS=$'\t' read -r key version_id; do
+                if [ -n "$key" ] && [ -n "$version_id" ]; then
+                    aws s3api delete-object --bucket "$bucket_name" --key "$key" --version-id "$version_id" >/dev/null 2>&1 || true
+                fi
+            done
+        fi
+        
+        # Verify bucket is empty
+        local remaining_objects
+        remaining_objects=$(aws s3 ls "s3://$bucket_name" --recursive --summarize 2>/dev/null | grep "Total Objects:" | awk '{print $3}' || echo "0")
+        
+        if [ "$remaining_objects" -eq 0 ]; then
+            echo -e "${GREEN}   ✅ Successfully emptied $bucket_type bucket: $bucket_name${NC}"
+        else
+            echo -e "${YELLOW}   ⚠️  Warning: $remaining_objects objects may still remain in $bucket_name${NC}"
+        fi
+    }
+    
+    # Try to get resource names from CloudFormation stack outputs
+    local stack_outputs
+    local resources_found=false
+    
+    if stack_outputs=$(aws cloudformation describe-stacks --stack-name "$stack_name" --query 'Stacks[0].Outputs' --output json 2>/dev/null); then
+        echo -e "${CYAN}📋 Found CloudFormation stack outputs, extracting resource names...${NC}"
+        
+        # Extract resource names from stack outputs
+        local vector_bucket=$(echo "$stack_outputs" | jq -r '.[] | select(.OutputKey=="VectorBucketName") | .OutputValue' 2>/dev/null)
+        local vector_index_name=$(echo "$stack_outputs" | jq -r '.[] | select(.OutputKey=="VectorIndexName") | .OutputValue' 2>/dev/null)
+        local metadata_bucket=$(echo "$stack_outputs" | jq -r '.[] | select(.OutputKey=="MetadataBucketName") | .OutputValue' 2>/dev/null)
+        local document_bucket=$(echo "$stack_outputs" | jq -r '.[] | select(.OutputKey=="DocumentBucketName") | .OutputValue' 2>/dev/null)
+        
+        # Clean up S3 Vector resources first (if both bucket and index exist)
+        if [ -n "$vector_bucket" ] && [ "$vector_bucket" != "null" ] && [ -n "$vector_index_name" ] && [ "$vector_index_name" != "null" ]; then
+            delete_vector_resources "$vector_bucket" "$vector_index_name"
+            resources_found=true
+        fi
+        
+        # Empty regular S3 buckets
+        if [ -n "$metadata_bucket" ] && [ "$metadata_bucket" != "null" ]; then
+            empty_single_bucket "$metadata_bucket" "metadata"
+            resources_found=true
+        fi
+        
+        if [ -n "$document_bucket" ] && [ "$document_bucket" != "null" ]; then
+            empty_single_bucket "$document_bucket" "document"
+            resources_found=true
+        fi
+        
+        if [ "$resources_found" = true ]; then
+            echo -e "${GREEN}✅ All resources from stack outputs cleaned successfully${NC}"
+        else
+            echo -e "${YELLOW}⚠️  No resources found in stack outputs${NC}"
+        fi
+    else
+        echo -e "${YELLOW}⚠️  Could not retrieve stack outputs, trying fallback cleanup...${NC}"
+    fi
+    
+    # Fallback: Try to find resources by naming convention if stack outputs failed
+    if [ "$resources_found" = false ]; then
+        echo -e "${CYAN}🔍 Attempting fallback resource discovery by naming convention...${NC}"
+        
+        # Get AWS account ID and region for resource naming pattern
+        local account_id=$(aws sts get-caller-identity --query Account --output text 2>/dev/null || echo "")
+        local region=$(aws configure get region 2>/dev/null || echo "us-east-1")
+        
+        if [ -n "$account_id" ]; then
+            # Try common bucket naming patterns
+            local potential_buckets=(
+                "chatbot-metadata-${account_id}-${region}"
+                "chatbot-documents-${account_id}-${region}"
+            )
+            
+            for bucket in "${potential_buckets[@]}"; do
+                if aws s3api head-bucket --bucket "$bucket" 2>/dev/null; then
+                    echo -e "${CYAN}📦 Found bucket by naming convention: $bucket${NC}"
+                    empty_single_bucket "$bucket" "discovered"
+                    resources_found=true
+                fi
+            done
+            
+            # Try to find S3 Vector resources by naming convention
+            local potential_vector_bucket="chatbot-vectors-${account_id}-${region}"
+            local potential_index="chatbot-document-vectors"
+            if aws s3vectors get-vector-bucket --vector-bucket-name "$potential_vector_bucket" >/dev/null 2>&1; then
+                echo -e "${CYAN}📦 Found S3 Vector resources by naming convention: $potential_vector_bucket / $potential_index${NC}"
+                delete_vector_resources "$potential_vector_bucket" "$potential_index"
+                resources_found=true
+            fi
+        fi
+        
+        # If still no resources found, try to list all buckets and find chatbot-related ones
+        if [ "$resources_found" = false ]; then
+            echo -e "${CYAN}🔍 Searching all S3 buckets for chatbot-related buckets...${NC}"
+            
+            local all_buckets
+            if all_buckets=$(aws s3api list-buckets --query 'Buckets[?contains(Name, `chatbot`)].Name' --output text 2>/dev/null); then
+                for bucket in $all_buckets; do
+                    if [ -n "$bucket" ]; then
+                        echo -e "${CYAN}📦 Found chatbot-related bucket: $bucket${NC}"
+                        empty_single_bucket "$bucket" "chatbot-related"
+                        resources_found=true
+                    fi
+                done
+            fi
+        fi
+        
+        if [ "$resources_found" = false ]; then
+            echo -e "${YELLOW}⚠️  No resources found to clean up. This may be normal if resources were already deleted.${NC}"
+        fi
+    fi
+    
+    # Final verification - try to use the external cleanup script as a last resort
+    if [ "$resources_found" = false ] && [ -f "scripts/cleanup_s3_buckets.sh" ]; then
+        echo -e "${CYAN}🔧 Attempting cleanup using external script...${NC}"
+        if bash scripts/cleanup_s3_buckets.sh --stack-name "$stack_name" 2>/dev/null; then
+            echo -e "${GREEN}✅ External cleanup script completed successfully${NC}"
+        else
+            echo -e "${YELLOW}⚠️  External cleanup script failed or found no resources${NC}"
+        fi
+    fi
+    
+    echo -e "${GREEN}✅ Resource cleanup phase completed${NC}"
+}
+
 # Perform rollback
 perform_rollback() {
     echo -e "${CYAN}🔄 Performing rollback for deployment $DEPLOYMENT_ID${NC}"
@@ -199,11 +412,32 @@ perform_rollback() {
                 
                 echo -e "${CYAN}🧹 Rolling back $action_type: $resource_id${NC}"
                 
-                # Execute cleanup command with error handling
-                if eval "$cleanup_command" 2>> "$LOG_FILE"; then
-                    echo -e "${GREEN}✅ Successfully rolled back $resource_id${NC}"
+                # Special handling for CloudFormation stacks
+                if [ "$action_type" = "cloudformation_stack" ]; then
+                    echo -e "${CYAN}🗑️  Preparing CloudFormation stack for deletion...${NC}"
+                    
+                    # Empty S3 buckets first
+                    empty_s3_buckets "$resource_id"
+                    
+                    # Now delete the stack
+                    echo -e "${CYAN}🗑️  Deleting CloudFormation stack: $resource_id${NC}"
+                    if aws cloudformation delete-stack --stack-name "$resource_id" 2>> "$LOG_FILE"; then
+                        echo -e "${CYAN}⏳ Waiting for stack deletion to complete...${NC}"
+                        if aws cloudformation wait stack-delete-complete --stack-name "$resource_id" 2>> "$LOG_FILE"; then
+                            echo -e "${GREEN}✅ Successfully deleted CloudFormation stack: $resource_id${NC}"
+                        else
+                            echo -e "${YELLOW}⚠️  Stack deletion may still be in progress. Check AWS Console for status.${NC}"
+                        fi
+                    else
+                        echo -e "${YELLOW}⚠️  Failed to initiate stack deletion for $resource_id${NC}"
+                    fi
                 else
-                    echo -e "${YELLOW}⚠️  Failed to rollback $resource_id (may need manual cleanup)${NC}"
+                    # Execute other cleanup commands normally
+                    if eval "$cleanup_command" 2>> "$LOG_FILE"; then
+                        echo -e "${GREEN}✅ Successfully rolled back $resource_id${NC}"
+                    else
+                        echo -e "${YELLOW}⚠️  Failed to rollback $resource_id (may need manual cleanup)${NC}"
+                    fi
                 fi
             done
         fi
@@ -659,7 +893,50 @@ main() {
             
         "rollback")
             echo -e "${YELLOW}🔄 Manual rollback requested${NC}"
-            perform_rollback
+            
+            # Check if we have rollback state
+            if [ -f "$ROLLBACK_FILE" ]; then
+                echo -e "${CYAN}📋 Found rollback state file, performing tracked rollback...${NC}"
+                perform_rollback
+            else
+                echo -e "${YELLOW}⚠️  No rollback state found. Attempting manual cleanup...${NC}"
+                
+                # Manual cleanup when no rollback state exists
+                echo -e "${CYAN}🧹 Performing manual cleanup of ChatbotRagStack...${NC}"
+                
+                # Check if stack exists
+                if aws cloudformation describe-stacks --stack-name ChatbotRagStack &> /dev/null; then
+                    echo -e "${CYAN}📦 Found ChatbotRagStack, proceeding with cleanup...${NC}"
+                    
+                    # Empty S3 buckets first
+                    empty_s3_buckets "ChatbotRagStack"
+                    
+                    # Delete the CloudFormation stack
+                    echo -e "${CYAN}🗑️  Deleting CloudFormation stack: ChatbotRagStack${NC}"
+                    if aws cloudformation delete-stack --stack-name ChatbotRagStack 2>> "$LOG_FILE"; then
+                        echo -e "${CYAN}⏳ Waiting for stack deletion to complete...${NC}"
+                        if aws cloudformation wait stack-delete-complete --stack-name ChatbotRagStack 2>> "$LOG_FILE"; then
+                            echo -e "${GREEN}✅ Successfully deleted CloudFormation stack: ChatbotRagStack${NC}"
+                        else
+                            echo -e "${YELLOW}⚠️  Stack deletion may still be in progress. Check AWS Console for status.${NC}"
+                        fi
+                    else
+                        echo -e "${RED}❌ Failed to initiate stack deletion${NC}"
+                        echo -e "${YELLOW}💡 You may need to empty S3 buckets manually and try again${NC}"
+                    fi
+                else
+                    echo -e "${YELLOW}⚠️  ChatbotRagStack not found. It may have already been deleted.${NC}"
+                    
+                    # Still try to clean up any remaining S3 buckets
+                    echo -e "${CYAN}🔍 Checking for any remaining chatbot S3 buckets...${NC}"
+                    empty_s3_buckets "ChatbotRagStack"
+                fi
+                
+                # Clean up any deployment artifacts
+                cleanup_deployment_artifacts
+                
+                echo -e "${GREEN}✅ Manual rollback completed${NC}"
+            fi
             ;;
             
         "status")
@@ -696,6 +973,21 @@ main() {
             fi
             ;;
             
+        "cleanup-s3")
+            echo -e "${YELLOW}🗑️  S3 Bucket Cleanup Requested${NC}"
+            echo -e "${CYAN}This will empty all S3 buckets associated with the ChatbotRagStack${NC}"
+            echo -e "${YELLOW}⚠️  This action cannot be undone!${NC}"
+            echo
+            read -p "Are you sure you want to continue? (y/N): " -n 1 -r
+            echo
+            if [[ $REPLY =~ ^[Yy]$ ]]; then
+                empty_s3_buckets "ChatbotRagStack"
+                echo -e "${GREEN}✅ S3 bucket cleanup completed${NC}"
+            else
+                echo -e "${CYAN}🚫 S3 cleanup cancelled${NC}"
+            fi
+            ;;
+            
         "help"|"--help")
             echo -e "${CYAN}RAG Chatbot - Atomic Deployment Script${NC}"
             echo -e ""
@@ -703,10 +995,11 @@ main() {
             echo -e "  $0 [command]"
             echo -e ""
             echo -e "${BOLD}Commands:${NC}"
-            echo -e "  deploy    Deploy the chatbot (default)"
-            echo -e "  rollback  Rollback the current deployment"
-            echo -e "  status    Show deployment status"
-            echo -e "  help      Show this help message"
+            echo -e "  deploy     Deploy the chatbot (default)"
+            echo -e "  rollback   Rollback the current deployment"
+            echo -e "  cleanup-s3 Empty all S3 buckets (use before manual stack deletion)"
+            echo -e "  status     Show deployment status"
+            echo -e "  help       Show this help message"
             ;;
             
         *)
