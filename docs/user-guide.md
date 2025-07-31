@@ -544,7 +544,8 @@ python3 scripts/manage_vector_indexes.py --optimize
 ./deploy.sh status
 
 # 4. Update dependencies (if needed)
-pip install -r requirements.txt --upgrade
+# Only needed for local script usage
+pip install -r scripts/requirements.txt --upgrade
 
 # 5. Generate maintenance report
 python3 -c "

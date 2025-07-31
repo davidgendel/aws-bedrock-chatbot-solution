@@ -38,13 +38,26 @@ cd chatbot-rag-v1.0
 ## 🛠️ Commands
 
 ```bash
-./deploy.sh deploy     # Deploy chatbot
+./deploy.sh deploy     # Deploy chatbot (no pip install needed)
 ./deploy.sh status     # Check status
 ./deploy.sh rollback   # Remove deployment
 ./deploy.sh cleanup-s3 # Empty S3 buckets only
 ```
 
+**Note**: The `./deploy.sh` script handles all deployment dependencies automatically. No manual `pip install` required for deployment.
+
 ## 📚 Document Management
+
+### **Local Document Processing Setup**
+
+For running document processing scripts locally, install the required dependencies:
+
+```bash
+# Install script dependencies (separate from Lambda layer)
+pip install -r scripts/requirements.txt
+```
+
+### **Document Processing Commands**
 
 ```bash
 # Process documents locally (recommended)

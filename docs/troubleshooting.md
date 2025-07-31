@@ -88,12 +88,14 @@ This guide provides solutions for common issues you might encounter during deplo
   python3 -m pip install --upgrade pip
   
   # Install with user flag if permission issues
-  pip install -r requirements.txt --user
+  # For local script dependencies only
+  pip install -r scripts/requirements.txt --user
   
   # Or use virtual environment
   python3 -m venv venv
   source venv/bin/activate
-  pip install -r requirements.txt
+  # For local script dependencies only
+  pip install -r scripts/requirements.txt
   ```
 
 ## 🚀 Deployment Issues

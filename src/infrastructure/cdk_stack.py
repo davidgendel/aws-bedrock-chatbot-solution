@@ -41,6 +41,7 @@ class ChatbotRagStack(cdk.Stack):
         self.s3_buckets = self._create_s3_buckets()
         self.guardrail = self._create_bedrock_guardrail()
         self.lambda_role = self._create_lambda_role()
+        self.layers = self._create_lambda_layers()  # Create layers early
         self.vector_indexes = self._create_vector_indexes()
         self._complete_lambda_role_permissions()  # Complete permissions after vector indexes exist
         self.log_groups = self._create_log_groups()
@@ -81,15 +82,6 @@ class ChatbotRagStack(cdk.Stack):
             auto_delete_objects=True,
         )
         
-        # Create a Lambda layer with the latest boto3 version
-        boto3_layer = lambda_.LayerVersion(
-            self, "LatestBoto3Layer",
-            code=lambda_.Code.from_asset("layers/boto3-layer"),  # We'll create this directory
-            compatible_runtimes=[lambda_.Runtime.PYTHON_3_12],
-            compatible_architectures=[lambda_.Architecture.ARM_64],
-            description="Latest boto3 1.39.17+ with S3 Vectors support"
-        )
-
         # Custom resource to create S3 Vector bucket and index using correct S3 Vectors service API
         vector_setup_creator = lambda_.Function(
             self, "VectorSetupCreator",
@@ -99,7 +91,7 @@ class ChatbotRagStack(cdk.Stack):
             timeout=cdk.Duration.minutes(5),
             memory_size=256,  # Increased memory for better performance
             role=self.lambda_role,
-            layers=[boto3_layer],  # Use the latest boto3 layer
+            layers=[self.layers["boto3"]],  # Use the boto3 layer from self.layers
             environment={
                 "PYTHONPATH": "/opt/python:/var/runtime",
             },
@@ -513,7 +505,16 @@ def handler(event, context):
 
     def _create_lambda_layers(self) -> Dict[str, lambda_.LayerVersion]:
         """Create Lambda layers for heavy dependencies."""
-        # Create dependencies layer
+        # Create boto3 layer with latest version
+        boto3_layer = lambda_.LayerVersion(
+            self, "LatestBoto3Layer",
+            code=lambda_.Code.from_asset("layers/boto3-layer"),
+            compatible_runtimes=[lambda_.Runtime.PYTHON_3_12],
+            compatible_architectures=[lambda_.Architecture.ARM_64],
+            description="Latest boto3 1.39.17+ with S3 Vectors support"
+        )
+        
+        # Create dependencies layer (without boto3 - now handled by boto3_layer)
         dependencies_layer = lambda_.LayerVersion(
             self, "ChatbotDependenciesLayer",
             code=lambda_.Code.from_asset(
@@ -531,17 +532,18 @@ def handler(event, context):
             ),
             compatible_runtimes=[lambda_.Runtime.PYTHON_3_12],
             compatible_architectures=[lambda_.Architecture.ARM_64],
-            description="Heavy dependencies layer for chatbot (NumPy, etc.)",
+            description="Optimized dependencies layer for chatbot (numpy, structlog, cachetools) - 52% smaller",
         )
         
         return {
+            "boto3": boto3_layer,
             "dependencies": dependencies_layer
         }
 
     def _create_lambda_functions(self) -> Dict[str, Any]:
         """Create Lambda functions for chatbot and document processing."""
-        # Create Lambda layers first
-        layers = self._create_lambda_layers()
+        # Use the layers created earlier
+        layers = self.layers
         
         # Create main chatbot Lambda function with layers
         chatbot_function = lambda_.Function(
@@ -550,7 +552,7 @@ def handler(event, context):
             architecture=lambda_.Architecture.ARM_64,
             handler="lambda_handler.handler",
             code=lambda_.Code.from_asset(str(Path(__file__).parent.parent.parent / "lambda_function")),
-            layers=[layers["dependencies"]],
+            layers=[layers["boto3"], layers["dependencies"]],  # boto3 layer first for proper precedence
             timeout=cdk.Duration.seconds(30),
             memory_size=512,  # Increased for better performance with layers
             role=self.lambda_role,
