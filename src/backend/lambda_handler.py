@@ -15,7 +15,10 @@ import boto3
 try:
     # Try relative imports first (for local development)
     from .aws_utils import get_aws_region
-    from .bedrock_utils import apply_guardrails, generate_embeddings, generate_response, cached_apply_guardrails
+    from .bedrock_utils import (
+        apply_guardrails, generate_embeddings, generate_response, cached_apply_guardrails,
+        generate_cached_response, get_cached_context, cache_context
+    )
     from .cache_manager import cache_manager, CacheType, get_cached_response, cache_response
     from .error_handler import (
         ChatbotError, DatabaseError, BedrockError, ValidationError, WebSocketError,
@@ -32,7 +35,10 @@ try:
 except ImportError:
     # Fall back to absolute imports (for Lambda environment)
     from aws_utils import get_aws_region
-    from bedrock_utils import apply_guardrails, generate_embeddings, generate_response, cached_apply_guardrails
+    from bedrock_utils import (
+        apply_guardrails, generate_embeddings, generate_response, cached_apply_guardrails,
+        generate_cached_response, get_cached_context, cache_context
+    )
     from cache_manager import cache_manager, CacheType, get_cached_response, cache_response
     from error_handler import (
         ChatbotError, DatabaseError, BedrockError, ValidationError, WebSocketError,
@@ -202,8 +208,17 @@ def handle_chat_request(body: Dict[str, Any]) -> Dict[str, Any]:
         # Generate embeddings for the query
         embedding = generate_embeddings(message)
         
-        # Retrieve relevant documents using S3 Vectors
-        relevant_docs = query_similar_vectors(embedding, limit=3, similarity_threshold=0.7)
+        # Check context cache first
+        cached_docs = get_cached_context(embedding, limit=3, threshold=0.7)
+        if cached_docs:
+            logger.debug("Using cached document context")
+            relevant_docs = cached_docs
+        else:
+            # Retrieve relevant documents using S3 Vectors
+            relevant_docs = query_similar_vectors(embedding, limit=3, similarity_threshold=0.7)
+            # Cache the retrieved context
+            cache_context(embedding, limit=3, threshold=0.7, context=relevant_docs)
+            logger.debug("Cached new document context")
         
         # Construct prompt with retrieved documents
         context = ""
@@ -267,16 +282,21 @@ Please provide a brief, conversational response (2-3 sentences max) based on the
         
         # If streaming is requested and this is not a WebSocket connection, use non-streaming response
         if not streaming:
-            response = generate_response(prompt, model_id)
+            # Use cached response generation with Bedrock native caching
+            response_result = generate_cached_response(prompt, model_id, use_bedrock_caching=True)
+            response = response_result["response"]
             
-            # Cache the response using unified cache manager
-            cache_response(message, response)
+            # Cache the response using unified cache manager (if not already cached)
+            if not response_result["cached"]:
+                cache_response(message, response)
             
-            # Return response
+            # Return response with cache metadata
             return create_success_response({
                 "response": response,
-                "cached": False,
-                "model": ModelConfig.get_model_id()
+                "cached": response_result["cached"],
+                "cache_type": response_result.get("cache_type", "none"),
+                "bedrock_cached": response_result.get("bedrock_cached", False),
+                "model": model_id
             })
         else:
             # For streaming, we'll use WebSocket API
@@ -676,9 +696,19 @@ def _send_websocket_error(api_client, connection_id: str, error_message: str) ->
 def _process_websocket_message_and_stream(message: str, connection_id: str, api_client) -> None:
     """Process WebSocket message and stream the response."""
     try:
-        # Generate embeddings and query S3 Vector index
+        # Generate embeddings and query S3 Vector index with caching
         embeddings = generate_embeddings(message)
-        relevant_docs = query_similar_vectors(embeddings, limit=5, similarity_threshold=0.7)
+        
+        # Check context cache first
+        cached_docs = get_cached_context(embeddings, limit=5, threshold=0.7)
+        if cached_docs:
+            logger.debug("Using cached document context for WebSocket")
+            relevant_docs = cached_docs
+        else:
+            relevant_docs = query_similar_vectors(embeddings, limit=5, similarity_threshold=0.7)
+            # Cache the retrieved context
+            cache_context(embeddings, limit=5, threshold=0.7, context=relevant_docs)
+            logger.debug("Cached new document context for WebSocket")
         
         # Construct prompt
         if relevant_docs:
