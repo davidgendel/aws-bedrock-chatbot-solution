@@ -2,7 +2,7 @@
 
 ## **Overview**
 
-The chatbot now implements a comprehensive 3-level caching architecture to optimize performance and reduce costs:
+The chatbot implements a comprehensive 3-level caching architecture to optimize performance and reduce costs:
 
 1. **Client-Side Caching** (Widget localStorage)
 2. **Lambda Memory Caching** (Multi-tier in-memory)
@@ -39,9 +39,9 @@ cache: {
 - `EMBEDDING` - Document embeddings (LRU, Size: 1000)
 - `METADATA` - Document metadata (TTL: 2h, Size: 100)
 - `CONFIG` - Configuration data (TTL: 2h, Size: 10)
-- `PROMPT` - Bedrock prompt responses (TTL: 1h, Size: 500) **NEW**
-- `CONTEXT` - Retrieved document context (TTL: 2h, Size: 300) **NEW**
-- `GUARDRAIL` - Guardrail results (TTL: 2h, Size: 1000) **NEW**
+- `PROMPT` - Bedrock prompt responses (TTL: 1h, Size: 500)
+- `CONTEXT` - Retrieved document context (TTL: 2h, Size: 300)
+- `GUARDRAIL` - Guardrail results (TTL: 2h, Size: 1000)
 
 ### **Level 3: Bedrock Native Caching**
 
@@ -78,7 +78,12 @@ def _supports_bedrock_caching(model_id: str) -> bool:
         "anthropic.claude-3-haiku-20240307-v1:0",
         "anthropic.claude-3-sonnet-20240229-v1:0",
         "anthropic.claude-3-opus-20240229-v1:0",
-        "anthropic.claude-3-5-sonnet-20240620-v1:0"
+        "anthropic.claude-3-5-sonnet-20240620-v1:0",
+        "amazon.nova-micro-v1:0",
+        "amazon.nova-lite-v1:0",
+        "amazon.nova-pro-v1:0",
+        "amazon.nova-premier-v1:0"
+         
     ]
     return model_id in supported_models
 ```
@@ -163,6 +168,7 @@ context_cache = TTLCache(maxsize=300, ttl=7200)     # 2 hours
 Automatically enabled for:
 - RAG prompts with context
 - Claude 3 family models
+- Amazon Nova family models
 - Prompts with system messages
 
 ## **🔧 Usage Examples**
