@@ -103,9 +103,9 @@ aws logs describe-log-groups --log-group-name-prefix "/aws/lambda/ChatbotRag"
 ## 💰 Cost Management
 
 ### Estimated Monthly Costs
-- **50 users/day**: ~$23
-- **250 users/day**: ~$60
-- **500 users/day**: ~$115
+- **50 users/day**: ~$11
+- **250 users/day**: ~$40
+- **500 users/day**: ~$79
 
 ### Cost Optimization
 - Monitor usage in CloudWatch

@@ -35,7 +35,7 @@ class SetupWizard:
         print(f"{Colors.BLUE}║{Colors.NC} We'll ask you a few questions to customize it for your business.")
         print(f"{Colors.BLUE}║{Colors.NC}")
         print(f"{Colors.BLUE}║{Colors.NC} {Colors.CYAN}Estimated time: 5-10 minutes{Colors.NC}")
-        print(f"{Colors.BLUE}║{Colors.NC} {Colors.CYAN}Monthly cost: Starting at $29.76{Colors.NC}")
+        print(f"{Colors.BLUE}║{Colors.NC} {Colors.CYAN}Monthly cost: Starting at $11.45{Colors.NC}")
         print(f"{Colors.BLUE}╚══════════════════════════════════════════════════════════════════════════════╝{Colors.NC}")
     
     def print_section(self, title: str):
@@ -253,8 +253,8 @@ class SetupWizard:
         """Show cost estimate based on configuration."""
         self.print_section("Cost Estimate")
         
-        print(f"{Colors.GREEN}💰 Estimated Monthly Cost: $22.97{Colors.NC}")
-        print(f"{Colors.CYAN}   Annual Cost: $275.64{Colors.NC}")
+        print(f"{Colors.GREEN}💰 Estimated Monthly Cost: $11.45{Colors.NC}")
+        print(f"{Colors.CYAN}   Annual Cost: $137.40{Colors.NC}")
         
         print(f"\n{Colors.YELLOW}💡 Cost includes:{Colors.NC}")
         print(f"{Colors.YELLOW}   • AI processing (Amazon Nova Lite + Titan Embeddings){Colors.NC}")
