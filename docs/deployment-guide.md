@@ -72,7 +72,7 @@ Your chatbot will cost approximately:
 
 2. **Run the installer**:
    ```bash
-   curl -sSL https://raw.githubusercontent.com/YOUR_USERNAME/chatbot-rag/main/install.sh | bash
+   curl -sSL https://raw.githubusercontent.com/YOUR_USERNAME/aws-bedrock-chatbot-solution/main/install.sh | bash
    ```
 
    **Replace `YOUR_USERNAME` with your actual GitHub username**
@@ -84,8 +84,8 @@ Your chatbot will cost approximately:
 
 1. **Download the code**:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/chatbot-rag.git
-   cd chatbot-rag
+   git clone https://github.com/YOUR_USERNAME/aws-bedrock-chatbot-solution.git
+   cd aws-bedrock-chatbot-solution
    ```
 
    **Replace `YOUR_USERNAME` with your actual GitHub username**
@@ -96,8 +96,6 @@ Your chatbot will cost approximately:
    ```
 
 3. **Follow the prompts**:
-   - Enter your business name
-   - Provide your email address
    - Choose your AWS region
    - Select your brand colors
 
