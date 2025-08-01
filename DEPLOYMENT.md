@@ -20,7 +20,7 @@ Your AWS user/role needs:
 ### One-Command Deployment
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/YOUR_USERNAME/chatbot-rag-v1.0/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/YOUR_USERNAME/aws-bedrock-chatbot-solution/main/install.sh | bash
 ```
 
 **⚠️ IMPORTANT**: Replace `YOUR_USERNAME` with your actual GitHub username.
@@ -30,8 +30,8 @@ curl -sSL https://raw.githubusercontent.com/YOUR_USERNAME/chatbot-rag-v1.0/main/
 ## ⚡ Manual Deployment
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/chatbot-rag-v1.0.git
-cd chatbot-rag-v1.0
+git clone https://github.com/YOUR_USERNAME/aws-bedrock-chatbot-solution.git
+cd aws-bedrock-chatbot-solution
 ./deploy.sh deploy
 ```
 
