@@ -307,25 +307,65 @@ class LocalDocumentProcessor:
             return ""
     
     def _create_chunks(self, text: str, metadata: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Create chunks from text."""
-        # Simple chunking by sentences
+        """Create overlapping chunks from text with optimized parameters."""
         sentences = sent_tokenize(text)
         chunks = []
+        max_chunk_size = 750   # Optimized: reduced from 1000
+        overlap_size = 100     # New: added overlap
+        
         current_chunk = ""
         current_size = 0
-        max_chunk_size = 1000  # characters
+        sentence_buffer = []  # Keep track of sentences for overlap
         
-        for sentence in sentences:
+        for i, sentence in enumerate(sentences):
+            sentence_buffer.append(sentence)
+            
             if current_size + len(sentence) > max_chunk_size and current_chunk:
+                # Create current chunk
                 chunks.append({
                     "content": current_chunk.strip(),
                     "metadata": metadata.copy(),
                     "chunk_index": len(chunks)
                 })
-                current_chunk = sentence
-                current_size = len(sentence)
+                
+                # Calculate overlap for next chunk
+                overlap_text = ""
+                overlap_length = 0
+                
+                # Work backwards through sentence buffer to create overlap
+                for j in range(len(sentence_buffer) - 1, -1, -1):
+                    sentence_len = len(sentence_buffer[j])
+                    if overlap_length + sentence_len <= overlap_size:
+                        overlap_text = sentence_buffer[j] + " " + overlap_text
+                        overlap_length += sentence_len
+                    else:
+                        break
+                
+                # Start new chunk with overlap + current sentence
+                current_chunk = overlap_text.strip()
+                if current_chunk:
+                    current_chunk += " " + sentence
+                else:
+                    current_chunk = sentence
+                current_size = len(current_chunk)
+                
+                # Reset sentence buffer, keeping only sentences in overlap
+                overlap_sentences = []
+                temp_length = 0
+                for j in range(len(sentence_buffer) - 1, -1, -1):
+                    if temp_length + len(sentence_buffer[j]) <= overlap_size:
+                        overlap_sentences.insert(0, sentence_buffer[j])
+                        temp_length += len(sentence_buffer[j])
+                    else:
+                        break
+                overlap_sentences.append(sentence)
+                sentence_buffer = overlap_sentences
+                
             else:
-                current_chunk += " " + sentence
+                if current_chunk:
+                    current_chunk += " " + sentence
+                else:
+                    current_chunk = sentence
                 current_size += len(sentence)
         
         # Add the last chunk
@@ -339,13 +379,17 @@ class LocalDocumentProcessor:
         return chunks
     
     def _generate_embeddings(self, text: str) -> List[float]:
-        """Generate embeddings using Bedrock."""
+        """Generate embeddings using Bedrock with optimized text length."""
         def _generate():
             bedrock_client = self._get_bedrock_client()
+            
+            # Optimize text length for better embedding quality
+            optimized_text = self._optimize_text_for_embedding(text)
+            
             response = bedrock_client.invoke_model(
                 modelId=self.config["bedrock"]["embeddingModelId"],
                 body=json.dumps({
-                    "inputText": text[:8000]  # Limit text length
+                    "inputText": optimized_text
                 })
             )
             
@@ -358,6 +402,39 @@ class LocalDocumentProcessor:
             logger.error(f"Failed to generate embeddings: {e}")
             # Return zero vector as fallback
             return [0.0] * self.config["vectorIndex"]["dimensions"]
+    
+    def _optimize_text_for_embedding(self, text: str) -> str:
+        """Optimize text length and content for embedding generation."""
+        optimal_length = 3000  # Optimized: reduced from 8000
+        
+        if len(text) <= optimal_length:
+            return text
+        
+        # Intelligent truncation - keep most important parts
+        sentences = sent_tokenize(text)
+        
+        # Strategy 1: Keep beginning and end (preserves context)
+        if len(sentences) > 4:
+            keep_start = len(sentences) // 3
+            keep_end = len(sentences) // 3
+            selected_sentences = sentences[:keep_start] + sentences[-keep_end:]
+            truncated = " ".join(selected_sentences)
+            
+            if len(truncated) <= optimal_length:
+                return truncated
+        
+        # Strategy 2: Simple truncation with sentence boundary
+        truncated = text[:optimal_length]
+        last_sentence_end = max(
+            truncated.rfind('.'),
+            truncated.rfind('!'),
+            truncated.rfind('?')
+        )
+        
+        if last_sentence_end > optimal_length * 0.8:  # If we can keep 80% and end on sentence
+            return truncated[:last_sentence_end + 1]
+        
+        return truncated
     
     def _get_bucket_names(self):
         """Get bucket names from CloudFormation with retry logic."""

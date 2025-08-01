@@ -209,15 +209,15 @@ def handle_chat_request(body: Dict[str, Any]) -> Dict[str, Any]:
         embedding = generate_embeddings(message)
         
         # Check context cache first
-        cached_docs = get_cached_context(embedding, limit=3, threshold=0.7)
+        cached_docs = get_cached_context(embedding, limit=3, threshold=0.45)
         if cached_docs:
             logger.debug("Using cached document context")
             relevant_docs = cached_docs
         else:
             # Retrieve relevant documents using S3 Vectors
-            relevant_docs = query_similar_vectors(embedding, limit=3, similarity_threshold=0.7)
+            relevant_docs = query_similar_vectors(embedding, limit=3, similarity_threshold=0.45)
             # Cache the retrieved context
-            cache_context(embedding, limit=3, threshold=0.7, context=relevant_docs)
+            cache_context(embedding, limit=3, threshold=0.45, context=relevant_docs)
             logger.debug("Cached new document context")
         
         # Construct prompt with retrieved documents
@@ -700,14 +700,14 @@ def _process_websocket_message_and_stream(message: str, connection_id: str, api_
         embeddings = generate_embeddings(message)
         
         # Check context cache first
-        cached_docs = get_cached_context(embeddings, limit=5, threshold=0.7)
+        cached_docs = get_cached_context(embeddings, limit=5, threshold=0.45)
         if cached_docs:
             logger.debug("Using cached document context for WebSocket")
             relevant_docs = cached_docs
         else:
-            relevant_docs = query_similar_vectors(embeddings, limit=5, similarity_threshold=0.7)
+            relevant_docs = query_similar_vectors(embeddings, limit=5, similarity_threshold=0.45)
             # Cache the retrieved context
-            cache_context(embeddings, limit=5, threshold=0.7, context=relevant_docs)
+            cache_context(embeddings, limit=5, threshold=0.45, context=relevant_docs)
             logger.debug("Cached new document context for WebSocket")
         
         # Construct prompt

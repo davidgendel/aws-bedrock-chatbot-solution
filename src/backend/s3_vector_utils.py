@@ -201,7 +201,7 @@ def store_document_vectors(document_id: str, chunks_with_embeddings: List[Dict[s
 def query_similar_vectors(
     query_embedding: List[float], 
     limit: int = 3, 
-    similarity_threshold: float = 0.7,
+    similarity_threshold: float = 0.45,
     filters: Optional[Dict[str, Any]] = None
 ) -> List[Dict[str, Any]]:
     """
@@ -581,6 +581,52 @@ def cleanup_old_vectors(days_old: int = 90) -> Dict[str, Any]:
 
 
 # Export all functions for external use
+def store_document_metadata(document_id: str, metadata: Dict[str, Any]) -> bool:
+    """
+    Store document metadata in S3.
+    
+    Args:
+        document_id: Unique document identifier
+        metadata: Document metadata dictionary
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        # Get vector bucket from environment or use default naming
+        vector_bucket = os.environ.get("VECTOR_BUCKET_NAME")
+        if not vector_bucket:
+            # Try to get from CloudFormation stack
+            try:
+                import boto3
+                cf_client = boto3.client('cloudformation')
+                response = cf_client.describe_stacks(StackName='ChatbotRagStack')
+                for output in response['Stacks'][0]['Outputs']:
+                    if output['OutputKey'] == 'VectorBucketName':
+                        vector_bucket = output['OutputValue']
+                        break
+            except Exception:
+                raise ValueError("VECTOR_BUCKET_NAME environment variable not set and cannot retrieve from CloudFormation")
+        
+        s3_client = get_s3_client()
+        
+        # Store metadata
+        metadata_key = f"metadata/{document_id}.json"
+        s3_client.put_object(
+            Bucket=vector_bucket,
+            Key=metadata_key,
+            Body=json.dumps(metadata),
+            ContentType="application/json"
+        )
+        
+        logger.info(f"Stored metadata for document {document_id}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Failed to store document metadata: {e}")
+        return False
+
+
 __all__ = [
     'get_s3_client',
     'get_s3_vectors_client', 
@@ -589,6 +635,7 @@ __all__ = [
     'get_vector_index_info',
     'delete_vector_index',
     'store_document_vectors',
+    'store_document_metadata',
     'query_similar_vectors',
     'delete_document_vectors',
     'cleanup_old_vectors',
