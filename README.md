@@ -8,10 +8,10 @@ Deploy an AI chatbot that learns from your documents in ~15 minutes. **Starting 
 
 ```bash
 # One-command deployment
-curl -sSL https://raw.githubusercontent.com/YOUR_USERNAME/chatbot-rag-v1.0/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/YOUR_USERNAME/aws-bedrock-chatbot-solution/main/install.sh | bash
 
 # Or manual deployment
-git clone https://github.com/YOUR_USERNAME/chatbot-rag-v1.0.git
+git clone https://github.com/YOUR_USERNAME/aws-bedrock-chatbot-solution.git
 cd chatbot-rag-v1.0
 ./deploy.sh deploy
 ```
