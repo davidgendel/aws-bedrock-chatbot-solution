@@ -12,7 +12,7 @@ curl -sSL https://raw.githubusercontent.com/YOUR_USERNAME/aws-bedrock-chatbot-so
 
 # Or manual deployment
 git clone https://github.com/YOUR_USERNAME/aws-bedrock-chatbot-solution.git
-cd chatbot-rag-v1.0
+cd aws-bedrock-chatbot-solution
 ./deploy.sh deploy
 ```
 
