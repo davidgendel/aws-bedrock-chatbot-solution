@@ -42,9 +42,10 @@ Before deploying the RAG Chatbot solution, ensure you have:
 ```bash
 # Verify prerequisites
 python3 --version    # Should be 3.12+
-aws --version       # Should be installed
+aws --version       # Should be 2.27.51+
 git --version       # Should be installed
 jq --version        # Optional, for atomic deployment
+node --version      # Should be 22.0+
 
 # Test AWS credentials
 aws sts get-caller-identity
@@ -55,7 +56,7 @@ aws sts get-caller-identity
 ### Option 1: One-Command Deployment (Recommended for Beginners)
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/YOUR_USERNAME/chatbot-rag/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/YOUR_USERNAME/aws-bedrock-chatbot-solution/main/install.sh | bash
 ```
 
 **Features:**
@@ -69,7 +70,7 @@ curl -sSL https://raw.githubusercontent.com/YOUR_USERNAME/chatbot-rag/main/insta
 ### Option 2: Atomic Deployment (Recommended for Production)
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/chatbot-rag.git
+git clone https://github.com/YOUR_USERNAME/aws-bedrock-chatbot-solution.git
 cd chatbot-rag
 ./deploy.sh deploy
 ```
@@ -86,7 +87,7 @@ cd chatbot-rag
 ### Option 3: Standard Manual Deployment
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/chatbot-rag.git
+git clone https://github.com/YOUR_USERNAME/aws-bedrock-chatbot-solution.git
 cd chatbot-rag
 ./deploy.sh
 ```
@@ -156,7 +157,6 @@ export ENABLE_CACHING=true
 # Security Settings
 export ENABLE_CONTENT_FILTERING=true
 export RATE_LIMIT_PER_MINUTE=60
-export PII_DETECTION_ENABLED=true
 
 # Debug Settings
 export DEBUG=false

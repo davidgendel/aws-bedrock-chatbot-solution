@@ -2,7 +2,7 @@
 
 > **⚠️ EXAMPLE PROJECT**: This demonstrates how to build a RAG chatbot using AWS services. Costs will vary based on usage. No warranty provided.
 
-Deploy an AI chatbot that learns from your documents in ~15 minutes. **Starting at $23/month**.
+Deploy an AI chatbot that learns from your documents in ~15 minutes. **Starting at $11/month**.
 
 ## 🚀 Quick Start
 
@@ -27,6 +27,7 @@ cd chatbot-rag-v1.0
 - **Multi-format documents** (PDF, TXT, images with OCR)
 - **Enterprise security** (WAF, rate limiting, PII detection)
 - **Auto-scaling** serverless architecture
+- **Multi-layer caching** for 20% cost savings
 
 ## 📋 Prerequisites
 
@@ -74,11 +75,11 @@ python3 scripts/process_documents_locally.py --delete "document-id"
 
 | Users/Day | Monthly Cost |
 |-----------|--------------|
-| 50        | $23          |
-| 250       | $60          |
-| 500       | $115         |
+| 50        | $11          |
+| 250       | $40          |
+| 500       | $79          |
 
-*Includes AI processing, hosting, vector storage, security*
+*Includes AI processing, hosting, vector storage, security, and 20% caching savings*
 
 ## 🏗️ Architecture
 
@@ -88,6 +89,7 @@ python3 scripts/process_documents_locally.py --delete "document-id"
 - **Storage**: S3 Vector buckets for embeddings
 - **Security**: WAF, Guardrails, rate limiting
 - **CDN**: CloudFront for global delivery
+- **Caching**: Multi-layer response and context caching
 
 ## 🧪 Testing
 

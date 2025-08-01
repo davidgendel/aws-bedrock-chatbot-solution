@@ -57,38 +57,47 @@ class EnhancedDeploymentValidator:
         self.cost_estimates = {
             "small": {
                 "users": 50,
-                "interactions": 15000,
+                "interactions": 22500,
                 "costs": {
-                    "rds": 19.38,
-                    "lambda": 1.11,
-                    "bedrock": 0.94,
-                    "waf": 8.01,
-                    "other": 0.32,
-                    "total": 29.76
+                    "lambda": 2.40,
+                    "s3_vectors": 0.05,
+                    "api_gateway": 1.35,
+                    "cloudfront": 0.50,
+                    "bedrock": 5.40,
+                    "s3_storage": 0.25,
+                    "cloudwatch": 0.50,
+                    "waf": 1.00,
+                    "total": 11.45
                 }
             },
             "medium": {
-                "users": 150,
-                "interactions": 54000,
+                "users": 250,
+                "interactions": 112500,
                 "costs": {
-                    "rds": 19.38,
-                    "lambda": 1.61,
-                    "bedrock": 3.35,
-                    "waf": 8.03,
-                    "other": 1.15,
-                    "total": 33.52
+                    "lambda": 9.60,
+                    "s3_vectors": 0.23,
+                    "api_gateway": 5.40,
+                    "cloudfront": 1.25,
+                    "bedrock": 21.60,
+                    "s3_storage": 0.25,
+                    "cloudwatch": 1.00,
+                    "waf": 1.00,
+                    "total": 40.33
                 }
             },
             "large": {
                 "users": 500,
                 "interactions": 225000,
                 "costs": {
-                    "rds": 40.87,
-                    "lambda": 4.69,
-                    "bedrock": 13.96,
-                    "waf": 8.14,
-                    "other": 4.75,
-                    "total": 72.41
+                    "lambda": 19.20,
+                    "s3_vectors": 0.46,
+                    "api_gateway": 10.80,
+                    "cloudfront": 2.50,
+                    "bedrock": 43.20,
+                    "s3_storage": 0.25,
+                    "cloudwatch": 1.50,
+                    "waf": 1.00,
+                    "total": 78.91
                 }
             }
         }
@@ -433,11 +442,14 @@ class EnhancedDeploymentValidator:
         
         costs = cost_info['costs']
         print(f"{Colors.BLUE}💰 Cost Breakdown:{Colors.NC}")
-        print(f"   🗄️  Database (RDS): ${costs['rds']:.2f}")
         print(f"   ⚡ Compute (Lambda): ${costs['lambda']:.2f}")
+        print(f"   🗄️  Vectors (S3): ${costs['s3_vectors']:.2f}")
+        print(f"   🌐 API Gateway: ${costs['api_gateway']:.2f}")
+        print(f"   🚀 CloudFront: ${costs['cloudfront']:.2f}")
         print(f"   🤖 AI/ML (Bedrock): ${costs['bedrock']:.2f}")
+        print(f"   📦 S3 Storage: ${costs['s3_storage']:.2f}")
+        print(f"   📊 CloudWatch: ${costs['cloudwatch']:.2f}")
         print(f"   🛡️  Security (WAF): ${costs['waf']:.2f}")
-        print(f"   🔧 Other services: ${costs['other']:.2f}")
         print(f"   {Colors.BOLD}📊 Total: ${costs['total']:.2f}/month{Colors.NC}")
         
         # Cost warnings
