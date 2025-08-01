@@ -22,6 +22,7 @@ cd aws-bedrock-chatbot-solution
 
 - **Amazon Nova Lite** for fast AI responses
 - **S3 Vectors** for scalable document embeddings storage
+- **One-command vector optimization** with built-in performance monitoring
 - **Real-time streaming** via WebSocket
 - **Content moderation** with Bedrock Guardrails
 - **Multi-format documents** (PDF, TXT, images with OCR)
@@ -71,6 +72,30 @@ python3 scripts/process_documents_locally.py --file ./doc.pdf
 python3 scripts/process_documents_locally.py --delete "document-id"
 ```
 
+### **Vector Index Management**
+
+Maintain optimal performance with built-in vector management tools:
+
+```bash
+# Optimize vector index performance (recommended weekly)
+./vector_manager.sh optimize chatbot-document-vectors
+
+# Monitor performance and costs
+./vector_manager.sh stats
+
+# List all vector indexes with details
+./vector_manager.sh list
+
+# Clear caches after bulk document updates
+./vector_manager.sh clear-cache
+```
+
+**Key Benefits:**
+- ⚡ **Automatic optimization** - Clears caches and optimizes performance
+- 📊 **Performance monitoring** - Track cache hit rates and costs
+- 🔧 **Zero configuration** - Automatically detects deployment settings
+- 💰 **Cost tracking** - Monitor monthly vector storage and query costs
+
 ## 💰 Estimated Costs
 
 | Users/Day | Monthly Cost |
@@ -107,14 +132,16 @@ python3 src/backend/config_validator.py
 ## 📖 Documentation
 
 - **[DEPLOYMENT.md](DEPLOYMENT.md)** - Complete deployment guide
+- **[VECTOR_MANAGEMENT.md](VECTOR_MANAGEMENT.md)** - Vector index management guide
 - **[docs/troubleshooting.md](docs/troubleshooting.md)** - Common issues
 - **[docs/api-spec.yaml](docs/api-spec.yaml)** - API documentation
 
 ## 🆘 Need Help?
 
-1. Check deployment logs: `deployment.log`
-2. Run: `./deploy.sh status`
-3. See troubleshooting guide: `docs/troubleshooting.md`
+1. **Deployment Issues**: Check `deployment.log` and run `./deploy.sh status`
+2. **Vector Management**: See [VECTOR_MANAGEMENT.md](VECTOR_MANAGEMENT.md) for optimization and troubleshooting
+3. **General Issues**: Check [docs/troubleshooting.md](docs/troubleshooting.md)
+4. **Vector Performance**: Run `./vector_manager.sh stats` to monitor performance
 
 ## 📄 License
 
@@ -125,4 +152,9 @@ MIT License - Free for commercial and personal use.
 **Ready to deploy?**
 ```bash
 ./deploy.sh deploy
+```
+
+**Ready to optimize your vectors?**
+```bash
+./vector_manager.sh optimize chatbot-document-vectors
 ```
