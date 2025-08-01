@@ -11,14 +11,6 @@ Before starting, make sure you have:
 3. **About 15 minutes** of your time
 4. **Your business documents** (PDFs, Word docs, etc.) that you want the chatbot to learn from
 
-## 💰 Cost Information
-
-Your chatbot will cost approximately:
-- **Small business (50 users/day)**: $29.76/month
-- **Growing business (150 users/day)**: $33.52/month
-- **Medium business (500 users/day)**: $72.41/month
-
-*These costs include everything: hosting, AI processing, database, and security.*
 
 ## 🚀 Step-by-Step Deployment
 
@@ -28,7 +20,6 @@ Your chatbot will cost approximately:
    - Go to [aws.amazon.com](https://aws.amazon.com)
    - Click "Create an AWS Account"
    - Follow the signup process (you'll need a credit card)
-   - Choose the "Basic Support" plan (it's free)
 
 2. **Set Up AWS CLI** (this lets your computer talk to AWS):
    
@@ -116,7 +107,7 @@ python3 -m scripts.upload_documents --folder ./documents
 
 ### Step 4: Add to Your Website
 
-Copy the provided integration code to your website:
+Copy the provided integration code to your website, for example:
 
 ```html
 <script src="https://your-domain.cloudfront.net/widget.js"></script>
@@ -142,7 +133,7 @@ Copy the provided integration code to your website:
 
 1. **Try recovery**: `./deploy.sh --recover`
 2. **Check the log**: `cat deployment.log`
-3. **Start fresh**: `./deploy.sh --clean` then `./deploy.sh`
+3. **Start fresh**: `./deploy.sh rollback` then `./deploy.sh`
 
 ### Common Issues
 
