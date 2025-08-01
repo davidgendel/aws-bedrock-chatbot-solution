@@ -9,9 +9,9 @@
   // Default configuration
   const DEFAULT_CONFIG = {
     containerId: 'chatbot-container',
-    apiEndpoint: 'API_ENDPOINT_PLACEHOLDER', // Replace with your deployed API Gateway endpoint
-    apiKey: 'API_KEY_PLACEHOLDER', // Replace with your API Gateway key
-    websocketUrl: 'WEBSOCKET_URL_PLACEHOLDER', // Replace with your WebSocket API endpoint
+    apiEndpoint: 'https://k575d1lfcj.execute-api.us-east-1.amazonaws.com/prod/', // Replace with your deployed API Gateway endpoint
+    apiKey: 'VcPQF19YGc2rm4CkrgYgF4ryz8mZ7kLQ7nrXd1l0', // Replace with your API Gateway key
+    websocketUrl: 'wss://0kf814zorb.execute-api.us-east-1.amazonaws.com/prod', // Replace with your WebSocket API endpoint
     streaming: true, // Enable streaming by default
     theme: {
       primaryColor: '#4287f5',

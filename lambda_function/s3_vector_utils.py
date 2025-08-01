@@ -437,7 +437,7 @@ def store_document_vectors(document_id: str, chunks_with_embeddings: List[Dict[s
 def query_similar_vectors(
     query_embedding: List[float], 
     limit: int = 3, 
-    similarity_threshold: float = 0.7,
+    similarity_threshold: float = 0.45,
     filters: Optional[Dict[str, Any]] = None
 ) -> List[Dict[str, Any]]:
     """
