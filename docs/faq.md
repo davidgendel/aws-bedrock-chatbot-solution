@@ -9,15 +9,16 @@
 **Required (Manual Setup):**
 1. **AWS Account** with billing enabled (credit card required)
 2. **AWS CLI installed** and configured with `aws configure`
-3. **Python 3.12+** installed (3.9+ minimum)
+3. **Python 3.12+** installed (3.12+ minimum)
 4. **Git** installed for cloning the repository
+5. **Nodejs** installed for aws-cdk (22.0+)
 
 **Optional (Enhanced Features):**
 5. **jq** installed (for atomic deployment with rollback)
 6. **scikit-learn** (auto-installed for vector clustering optimization)
 
 **Automatic (Handled by Script):**
-- Node.js and npm (auto-installed if missing)
+- npm (auto-installed if missing)
 - AWS CDK (auto-installed if missing)
 - Python packages (installed from requirements.txt)
 - CDK bootstrap (attempted automatically)
@@ -78,30 +79,6 @@ For production, you can create a more restrictive policy after deployment.
 - **S3 Vectors**: Available in all major AWS regions
 
 ## 🏗️ Architecture & Technology
-
-### Q: What changed from the original architecture?
-
-**A: Major enhancements in this version:**
-
-**Vector Storage:**
-- ❌ **Old**: RDS PostgreSQL + pgvector (database management required)
-- ✅ **New**: Amazon S3 Vectors (native cloud vector storage)
-
-**Search Performance:**
-- ❌ **Old**: Linear search O(n)
-- ✅ **New**: HNSW hierarchical indexing O(log n) - 10-50x faster
-
-**Document Processing:**
-- ❌ **Old**: Synchronous processing
-- ✅ **New**: Async batch processing with SQS queues
-
-**Deployment:**
-- ❌ **Old**: Basic deployment with manual recovery
-- ✅ **New**: Atomic deployment with automatic rollback
-
-**Caching:**
-- ❌ **Old**: Basic caching
-- ✅ **New**: Multi-layer caching (memory + S3)
 
 ### Q: What is S3 Vectors and why is it better?
 
@@ -654,14 +631,6 @@ Actual costs may vary based on:
 
 ## 🔄 Updates & Maintenance
 
-### Q: How often should I update?
-
-**A:** Update frequency:
-- **Security updates**: Apply immediately
-- **Feature updates**: Monthly or as needed
-- **Dependency updates**: Quarterly
-- **AWS service updates**: Handled automatically
-
 ### Q: What maintenance is required?
 
 **A:** Regular maintenance:
@@ -679,19 +648,11 @@ Actual costs may vary based on:
 4. **Update DNS**: Point domain to new CloudFront distribution
 5. **Test thoroughly**: Verify all functionality works
 
-## 📞 Getting More Help
+## Getting More Help
 
 **Still have questions?**
 
 - 📖 **Documentation**: Check the full documentation in the `docs/` folder
-- 🐛 **Bug Reports**: Create an issue on GitHub with detailed information
-- 💬 **Discussions**: Join the community discussions for general questions
-- 📧 **Direct Support**: For enterprise customers, contact support directly
 
-**Before asking for help, please:**
-1. Check this FAQ
-2. Review the troubleshooting guide
-3. Search existing GitHub issues
-4. Include relevant logs and error messages in your question
 
-We're here to help you succeed with your AI chatbot! 🚀
+
