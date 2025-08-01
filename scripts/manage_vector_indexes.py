@@ -32,6 +32,7 @@ from backend.s3_vector_utils import (
     delete_vector_index,
     optimize_vector_index,
     get_vector_index_stats,
+    get_all_vector_stats,
     clear_all_caches,
     get_cache_stats
 )
@@ -88,18 +89,33 @@ class VectorIndexManager:
                 return
             
             for idx in indexes:
-                status_emoji = "✅" if idx.get('status') == 'ACTIVE' else "⚠️"
-                api_type = "Native" if idx.get('native_api', False) else "S3"
-                
-                print(f"{status_emoji} {idx['name']}")
-                print(f"   ID: {idx.get('id', 'N/A')}")
-                print(f"   Status: {idx.get('status', 'UNKNOWN')}")
-                print(f"   Dimensions: {idx.get('dimensions', 'N/A')}")
-                print(f"   Similarity: {idx.get('similarity_metric', 'N/A')}")
-                print(f"   Vectors: {idx.get('vector_count', 0):,}")
-                print(f"   API Type: {api_type}")
-                print(f"   Created: {idx.get('created_at', 'N/A')}")
-                print()
+                # Get detailed information for each index
+                index_name = idx.get('name')
+                if index_name:
+                    detailed_info = get_vector_index_info(index_name)
+                    if detailed_info:
+                        status_emoji = "✅" if detailed_info.get('status') == 'ACTIVE' else "⚠️"
+                        api_type = "Native" if detailed_info.get('native_api', False) else "S3"
+                        
+                        print(f"{status_emoji} {detailed_info['name']}")
+                        print(f"   ID: {detailed_info.get('id', 'N/A')}")
+                        print(f"   Status: {detailed_info.get('status', 'UNKNOWN')}")
+                        print(f"   Dimensions: {detailed_info.get('dimensions', 'N/A')}")
+                        print(f"   Similarity: {detailed_info.get('distance_metric', 'N/A')}")
+                        print(f"   Data Type: {detailed_info.get('data_type', 'N/A')}")
+                        print(f"   Vectors: {detailed_info.get('vector_count', 0):,}")
+                        print(f"   API Type: {api_type}")
+                        print(f"   Created: {detailed_info.get('created_at', 'N/A')}")
+                        print()
+                    else:
+                        # Fallback to basic info if detailed info fails
+                        status_emoji = "⚠️"
+                        print(f"{status_emoji} {idx['name']}")
+                        print(f"   ID: {idx.get('id', 'N/A')}")
+                        print(f"   Status: {idx.get('status', 'UNKNOWN')}")
+                        print(f"   Created: {idx.get('created_at', 'N/A')}")
+                        print(f"   Note: Could not retrieve detailed information")
+                        print()
         
         except Exception as e:
             print(f"❌ Error listing indexes: {e}")
@@ -217,10 +233,19 @@ class VectorIndexManager:
         print("=" * 50)
         
         try:
-            if optimize_vector_index(index_name):
+            result = optimize_vector_index(index_name)
+            
+            if result.get("success"):
                 print(f"✅ Successfully optimized index '{index_name}'")
+                print(f"📊 Vector count: {result.get('vector_count', 'N/A')}")
+                print(f"💾 Index size: {result.get('index_size_mb', 'N/A')} MB")
+                print(f"🧹 Cache cleared: {result.get('cache_cleared', False)}")
+                if result.get("message"):
+                    print(f"ℹ️  {result['message']}")
             else:
                 print(f"❌ Failed to optimize index '{index_name}'")
+                if result.get("error"):
+                    print(f"   Error: {result['error']}")
         
         except Exception as e:
             print(f"❌ Error optimizing index: {e}")
@@ -232,15 +257,43 @@ class VectorIndexManager:
         print("=" * 50)
         
         try:
-            stats = get_vector_index_stats()
+            stats = get_all_vector_stats()
+            
+            if not stats.get("success"):
+                print(f"❌ Error getting statistics: {stats.get('error', 'Unknown error')}")
+                return
             
             # Overall statistics
             print("🌐 Overall Statistics:")
             print(f"   Total Indexes: {stats.get('total_indexes', 0)}")
-            print(f"   Total Vectors: {stats.get('total_vectors', 0):,}")
-            print(f"   Total Storage: {stats.get('total_storage_mb', 0):.2f} MB")
-            print(f"   Average Vectors/Index: {stats.get('average_vectors_per_index', 0):.1f}")
+            
+            total_vectors = stats.get('total_vectors', 0)
+            if isinstance(total_vectors, (int, float)):
+                print(f"   Total Vectors: {total_vectors:,}")
+            else:
+                print(f"   Total Vectors: {total_vectors}")
+            
+            total_storage = stats.get('total_storage_mb', 0)
+            if isinstance(total_storage, (int, float)):
+                print(f"   Total Storage: {total_storage:.2f} MB")
+            else:
+                print(f"   Total Storage: {total_storage}")
+            
+            avg_vectors = stats.get('average_vectors_per_index', 0)
+            if isinstance(avg_vectors, (int, float)):
+                print(f"   Average Vectors/Index: {avg_vectors:.1f}")
+            else:
+                print(f"   Average Vectors/Index: {avg_vectors}")
             print()
+            
+            # Cost estimates
+            costs = stats.get('estimated_monthly_costs', {})
+            if costs:
+                print("💰 Estimated Monthly Costs:")
+                print(f"   Storage Cost: ${costs.get('total_storage_cost', 0):.4f}")
+                print(f"   Query Cost (per 1K): ${costs.get('query_cost_per_1k', 0):.4f}")
+                print(f"   Data Processing: ${costs.get('data_processing_cost_per_tb', 0):.4f}/TB")
+                print()
             
             # Cache statistics
             cache_stats = stats.get('cache_stats', {})
@@ -265,14 +318,27 @@ class VectorIndexManager:
                 print("📋 Individual Indexes:")
                 for idx in indexes:
                     status_emoji = "✅" if idx.get('status') == 'ACTIVE' else "⚠️"
-                    storage_mb = idx.get('storage_size_bytes', 0) / (1024 * 1024)
                     
                     print(f"   {status_emoji} {idx['name']}")
-                    print(f"      Vectors: {idx.get('vector_count', 0):,}")
-                    print(f"      Storage: {storage_mb:.2f} MB")
-                    print(f"      Dimensions: {idx.get('dimensions', 'N/A')}")
-            
-            print(f"\n🕒 Generated: {stats.get('generated_at', 'N/A')}")
+                    
+                    vector_count = idx.get('vector_count', 0)
+                    if isinstance(vector_count, (int, float)):
+                        print(f"      Vectors: {vector_count:,}")
+                    else:
+                        print(f"      Vectors: {vector_count}")
+                    
+                    storage_mb = idx.get('storage_size_mb', 0)
+                    if isinstance(storage_mb, (int, float)):
+                        print(f"      Storage: {storage_mb:.2f} MB")
+                    else:
+                        print(f"      Storage: {storage_mb}")
+                    
+                    print(f"      Dimensions: {idx.get('dimensions', 0)}")
+                    print(f"      Metric: {idx.get('similarity_metric', 'unknown')}")
+                    print(f"      Created: {idx.get('created_at', 'unknown')}")
+                    print()
+            else:
+                print("   No indexes found")
         
         except Exception as e:
             print(f"❌ Error getting statistics: {e}")
