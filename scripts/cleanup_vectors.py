@@ -59,7 +59,16 @@ def setup_environment(region: str):
             config = json.load(f)
         
         # Get AWS account ID for bucket naming
-        sts_client = boto3.client("sts", region_name=region)
+        # Use signed client for enhanced security
+        try:
+            import sys
+            from pathlib import Path
+            sys.path.append(str(Path(__file__).parent.parent / "lambda_function"))
+            from aws_client_factory import AWSClientFactory
+            sts_client = AWSClientFactory.create_client("sts", region_name=region, enable_signing=True)
+        except ImportError:
+            # Fallback to regular boto3 client
+            sts_client = boto3.client("sts", region_name=region)
         account_id = sts_client.get_caller_identity()["Account"]
         
         # Set environment variables
@@ -130,7 +139,10 @@ def cleanup_metadata(days_old: int, dry_run: bool = False) -> Dict[str, Any]:
             logger.warning("METADATA_BUCKET_NAME not set, skipping metadata cleanup")
             return {"metadata_deleted": 0}
         
-        s3_client = boto3.client("s3", region_name=os.environ.get("AWS_REGION", "us-east-1"))
+        try:
+            s3_client = AWSClientFactory.create_client("s3", region_name=os.environ.get("AWS_REGION", "us-east-1"), enable_signing=True)
+        except:
+            s3_client = boto3.client("s3", region_name=os.environ.get("AWS_REGION", "us-east-1"))
         
         # Calculate cutoff date
         cutoff_date = datetime.utcnow() - timedelta(days=days_old)

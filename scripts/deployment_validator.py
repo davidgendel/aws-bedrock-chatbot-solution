@@ -194,7 +194,15 @@ class DeploymentValidator:
         
         try:
             # Test basic AWS access
-            sts = boto3.client('sts', region_name=self.region)
+            # Use signed client for enhanced security
+            try:
+                import sys
+                from pathlib import Path
+                sys.path.append(str(Path(__file__).parent.parent / "lambda_function"))
+                from aws_client_factory import AWSClientFactory
+                sts = AWSClientFactory.create_client('sts', region_name=self.region, enable_signing=True)
+            except ImportError:
+                sts = boto3.client('sts', region_name=self.region)
             identity = sts.get_caller_identity()
             
             self.print_success(f"AWS credentials valid")
@@ -216,7 +224,10 @@ class DeploymentValidator:
             permissions_ok = True
             for service, display_name in services_to_test:
                 try:
-                    client = boto3.client(service, region_name=self.region)
+                    try:
+                        client = AWSClientFactory.create_client(service, region_name=self.region, enable_signing=True)
+                    except:
+                        client = boto3.client(service, region_name=self.region)
                     
                     # Test basic access with a safe operation
                     if service == 'cloudformation':
@@ -266,7 +277,10 @@ class DeploymentValidator:
         self.print_section("Bedrock Model Access Check")
         
         try:
-            bedrock = boto3.client('bedrock', region_name=self.region)
+            try:
+                bedrock = AWSClientFactory.create_client('bedrock', region_name=self.region, enable_signing=True)
+            except:
+                bedrock = boto3.client('bedrock', region_name=self.region)
             
             # List available models
             models = bedrock.list_foundation_models()
@@ -350,7 +364,10 @@ class DeploymentValidator:
         
         try:
             # Check Lambda limits
-            lambda_client = boto3.client('lambda', region_name=self.region)
+            try:
+                lambda_client = AWSClientFactory.create_client('lambda', region_name=self.region, enable_signing=True)
+            except:
+                lambda_client = boto3.client('lambda', region_name=self.region)
             
             # Check concurrent executions limit
             account_settings = lambda_client.get_account_settings()
@@ -362,7 +379,10 @@ class DeploymentValidator:
                 self.print_warning(f"Low Lambda concurrent executions limit: {concurrent_limit}")
             
             # Check RDS limits
-            rds_client = boto3.client('rds', region_name=self.region)
+            try:
+                rds_client = AWSClientFactory.create_client('rds', region_name=self.region, enable_signing=True)
+            except:
+                rds_client = boto3.client('rds', region_name=self.region)
             
             # This is a simplified check - in practice you'd need to check quotas
             self.print_info("RDS limits check - manual verification recommended")
@@ -418,7 +438,10 @@ class DeploymentValidator:
         self.print_section("Deployment Status Check")
         
         try:
-            cf_client = boto3.client('cloudformation', region_name=self.region)
+            try:
+                cf_client = AWSClientFactory.create_client('cloudformation', region_name=self.region, enable_signing=True)
+            except:
+                cf_client = boto3.client('cloudformation', region_name=self.region)
             
             # Check if stack exists
             try:
@@ -516,7 +539,10 @@ class DeploymentValidator:
         if api_endpoint and api_key_id:
             try:
                 # Get API key value
-                apigw_client = boto3.client('apigateway', region_name=self.region)
+                try:
+                    apigw_client = AWSClientFactory.create_client('apigateway', region_name=self.region, enable_signing=True)
+                except:
+                    apigw_client = boto3.client('apigateway', region_name=self.region)
                 api_key_response = apigw_client.get_api_key(
                     apiKey=api_key_id,
                     includeValue=True

@@ -1,5 +1,17 @@
 {
   "region": "us-east-1",
+  "aws": {
+    "requestSigning": {
+      "enabled": true,
+      "signatureVersion": "v4",
+      "includeHeaders": ["host", "x-amz-date", "authorization"],
+      "excludeServices": [],
+      "cacheTTL": 300,
+      "requireHttps": true,
+      "validateSignatures": true,
+      "logSigningEvents": false
+    }
+  },
   "lambda": {
     "chatbot": {
       "provisionedConcurrency": {
@@ -64,6 +76,28 @@
           "customWordLists": []
         }
       }
+    }
+  },
+  "costMonitoring": {
+    "enabled": true,
+    "cloudWatchNamespace": "Chatbot/Costs",
+    "batchSize": 20,
+    "flushInterval": 60,
+    "trackConversationCosts": true,
+    "enableDetailedMetrics": true,
+    "maxRequestsPerMinute": 150,
+    "maxErrors": 10,
+    "circuitTimeout": 300,
+    "costAlerts": {
+      "enabled": true,
+      "dailyThreshold": 5.0,
+      "monthlyThreshold": 100.0,
+      "conversationThreshold": 0.10
+    },
+    "metricsCollection": {
+      "maxBatchSize": 20,
+      "maxQueueSize": 1000,
+      "aggregationWindow": 60
     }
   }
 }

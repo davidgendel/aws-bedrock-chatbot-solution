@@ -1,12 +1,15 @@
 """
-AWS utilities for the chatbot backend.
+AWS utilities for the chatbot backend with request signing support.
 """
 import logging
 import os
 import threading
 from typing import Any, Optional
 
-import boto3
+try:
+    from .aws_client_factory import AWSClientFactory
+except ImportError:
+    from aws_client_factory import AWSClientFactory
 
 # Initialize logger
 logger = logging.getLogger(__name__)
@@ -62,156 +65,176 @@ def get_aws_region() -> str:
     return region
 
 
-def get_aws_client(service_name: str, region: Optional[str] = None) -> Any:
+def get_aws_client(service_name: str, region: Optional[str] = None, enable_signing: bool = True) -> Any:
     """
-    Get an AWS client with lazy loading.
+    Get an AWS client with optional request signing.
     
     Args:
         service_name: AWS service name
         region: AWS region (optional)
+        enable_signing: Whether to enable request signing
         
     Returns:
         AWS client
     """
     try:
-        # Use thread-local storage to cache clients
-        if not hasattr(_thread_local, "aws_clients"):
-            _thread_local.aws_clients = {}
-        
-        # Use provided region or default
-        region = region or get_aws_region()
-        
-        # Create a unique key for this client
-        client_key = f"{service_name}:{region}"
-        
-        # Return cached client if it exists
-        if client_key in _thread_local.aws_clients:
-            return _thread_local.aws_clients[client_key]
-        
-        # Create and cache a new client
-        logger.debug(f"Creating new AWS client for {service_name} in {region}")
-        client = boto3.client(service_name, region_name=region)
-        _thread_local.aws_clients[client_key] = client
-        
-        return client
+        return AWSClientFactory.create_client(
+            service_name=service_name,
+            region_name=region or get_aws_region(),
+            enable_signing=enable_signing
+        )
     except Exception as e:
         logger.error(f"Failed to create AWS client for {service_name}: {e}")
         raise
 
 
-def get_aws_resource(service_name: str, region: Optional[str] = None) -> Any:
+def get_aws_resource(service_name: str, region: Optional[str] = None, enable_signing: bool = True) -> Any:
     """
-    Get an AWS resource with lazy loading.
+    Get an AWS resource with optional request signing.
     
     Args:
         service_name: AWS service name
         region: AWS region (optional)
+        enable_signing: Whether to enable request signing
         
     Returns:
         AWS resource
     """
     try:
-        # Use thread-local storage to cache resources
-        if not hasattr(_thread_local, "aws_resources"):
-            _thread_local.aws_resources = {}
-        
-        # Use provided region or default
-        region = region or get_aws_region()
-        
-        # Create a unique key for this resource
-        resource_key = f"{service_name}:{region}"
-        
-        # Return cached resource if it exists
-        if resource_key in _thread_local.aws_resources:
-            return _thread_local.aws_resources[resource_key]
-        
-        # Create and cache a new resource
-        logger.debug(f"Creating new AWS resource for {service_name} in {region}")
-        resource = boto3.resource(service_name, region_name=region)
-        _thread_local.aws_resources[resource_key] = resource
-        
-        return resource
+        return AWSClientFactory.create_resource(
+            service_name=service_name,
+            region_name=region or get_aws_region(),
+            enable_signing=enable_signing
+        )
     except Exception as e:
         logger.error(f"Failed to create AWS resource for {service_name}: {e}")
         raise
 
 
-# Specific client getters for commonly used services
-def get_bedrock_client() -> Any:
+# Specific client getters for commonly used services with signing support
+def get_bedrock_client(enable_signing: bool = True) -> Any:
     """
-    Get a Bedrock client.
+    Get a Bedrock client with optional signing.
     
+    Args:
+        enable_signing: Whether to enable request signing
+        
     Returns:
         Bedrock client
     """
-    return get_aws_client("bedrock-runtime")
+    return get_aws_client("bedrock-runtime", enable_signing=enable_signing)
 
 
-def get_s3_client() -> Any:
+def get_s3_client(enable_signing: bool = True) -> Any:
     """
-    Get an S3 client.
+    Get an S3 client with optional signing.
     
+    Args:
+        enable_signing: Whether to enable request signing
+        
     Returns:
         S3 client
     """
-    return get_aws_client("s3")
+    return get_aws_client("s3", enable_signing=enable_signing)
 
 
-def get_s3_resource() -> Any:
+def get_s3_resource(enable_signing: bool = True) -> Any:
     """
-    Get an S3 resource.
+    Get an S3 resource with optional signing.
     
+    Args:
+        enable_signing: Whether to enable request signing
+        
     Returns:
         S3 resource
     """
-    return get_aws_resource("s3")
+    return get_aws_resource("s3", enable_signing=enable_signing)
 
 
-def get_dynamodb_client() -> Any:
+def get_dynamodb_client(enable_signing: bool = True) -> Any:
     """
-    Get a DynamoDB client.
+    Get a DynamoDB client with optional signing.
     
+    Args:
+        enable_signing: Whether to enable request signing
+        
     Returns:
         DynamoDB client
     """
-    return get_aws_client("dynamodb")
+    return get_aws_client("dynamodb", enable_signing=enable_signing)
 
 
-def get_dynamodb_resource() -> Any:
+def get_dynamodb_resource(enable_signing: bool = True) -> Any:
     """
-    Get a DynamoDB resource.
+    Get a DynamoDB resource with optional signing.
     
+    Args:
+        enable_signing: Whether to enable request signing
+        
     Returns:
         DynamoDB resource
     """
-    return get_aws_resource("dynamodb")
+    return get_aws_resource("dynamodb", enable_signing=enable_signing)
 
 
-def get_secrets_manager_client() -> Any:
+def get_secrets_manager_client(enable_signing: bool = True) -> Any:
     """
-    Get a Secrets Manager client.
+    Get a Secrets Manager client with optional signing.
     
+    Args:
+        enable_signing: Whether to enable request signing
+        
     Returns:
         Secrets Manager client
     """
-    return get_aws_client("secretsmanager")
+    return get_aws_client("secretsmanager", enable_signing=enable_signing)
 
 
-def get_textract_client() -> Any:
+def get_textract_client(enable_signing: bool = True) -> Any:
     """
-    Get a Textract client.
+    Get a Textract client with optional signing.
     
+    Args:
+        enable_signing: Whether to enable request signing
+        
     Returns:
         Textract client
     """
-    return get_aws_client("textract")
+    return get_aws_client("textract", enable_signing=enable_signing)
 
 
-def get_cloudwatch_client() -> Any:
+def get_cloudwatch_client(enable_signing: bool = True) -> Any:
     """
-    Get a CloudWatch client.
+    Get a CloudWatch client with optional signing.
     
+    Args:
+        enable_signing: Whether to enable request signing
+        
     Returns:
         CloudWatch client
     """
-    return get_aws_client("logs")
+    return get_aws_client("logs", enable_signing=enable_signing)
+
+
+# Configuration and management functions
+def configure_request_signing(enabled: bool, **config_updates):
+    """
+    Configure request signing at runtime.
+    
+    Args:
+        enabled: Whether to enable request signing
+        **config_updates: Additional configuration updates
+    """
+    AWSClientFactory.configure_signing(enabled, **config_updates)
+    logger.info(f"Request signing {'enabled' if enabled else 'disabled'}")
+
+
+def clear_client_cache():
+    """Clear the AWS client cache."""
+    AWSClientFactory.clear_cache()
+    logger.info("AWS client cache cleared")
+
+
+def get_client_cache_stats():
+    """Get AWS client cache statistics."""
+    return AWSClientFactory.get_cache_stats()

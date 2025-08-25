@@ -39,7 +39,16 @@ def get_stack_outputs(stack_name: str, region: str):
     Returns:
         Dictionary of stack outputs
     """
-    cf_client = boto3.client("cloudformation", region_name=region)
+    # Use signed clients for enhanced security
+    try:
+        import sys
+        from pathlib import Path
+        sys.path.append(str(Path(__file__).parent.parent / "lambda_function"))
+        from aws_client_factory import AWSClientFactory
+        cf_client = AWSClientFactory.create_client("cloudformation", region_name=region, enable_signing=True)
+    except ImportError:
+        # Fallback to regular boto3 client
+        cf_client = boto3.client("cloudformation", region_name=region)
     
     try:
         response = cf_client.describe_stacks(StackName=stack_name)
@@ -66,7 +75,11 @@ def get_db_credentials(secret_arn: str, region: str):
     Returns:
         Database credentials
     """
-    secrets_manager = boto3.client("secretsmanager", region_name=region)
+    # Use signed client for Secrets Manager
+    try:
+        secrets_manager = AWSClientFactory.create_client("secretsmanager", region_name=region, enable_signing=True)
+    except:
+        secrets_manager = boto3.client("secretsmanager", region_name=region)
     
     try:
         response = secrets_manager.get_secret_value(SecretId=secret_arn)

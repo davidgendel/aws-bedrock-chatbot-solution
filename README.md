@@ -8,25 +8,26 @@ Deploy an AI chatbot that learns from your documents in ~15 minutes. **Starting 
 
 ```bash
 # One-command deployment
-curl -sSL https://raw.githubusercontent.com/YOUR_USERNAME/aws-bedrock-chatbot-solution/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/your-github-username/aws-bedrock-chatbot-solution/main/install.sh | bash
 
 # Or manual deployment
-git clone https://github.com/YOUR_USERNAME/aws-bedrock-chatbot-solution.git
+git clone https://github.com/your-github-username/aws-bedrock-chatbot-solution.git
 cd aws-bedrock-chatbot-solution
 ./deploy.sh deploy
 ```
 
-**⚠️ Replace `YOUR_USERNAME` with your GitHub username**
+**⚠️ Replace `your-github-username` with your actual GitHub username**
 
 ## ✨ Features
 
 - **Amazon Nova Lite** for fast AI responses
 - **S3 Vectors** for scalable document embeddings storage
+- **AWS Request Signing** with SigV4 for enhanced security
 - **One-command vector optimization** with built-in performance monitoring
 - **Real-time streaming** via WebSocket
 - **Content moderation** with Bedrock Guardrails
 - **Multi-format documents** (PDF, TXT, images with OCR)
-- **Enterprise security** (WAF, rate limiting, PII detection)
+- **Enterprise security** (WAF, rate limiting, PII detection, signed requests)
 - **Auto-scaling** serverless architecture
 - **Multi-layer caching** for 20% cost savings
 
@@ -133,6 +134,7 @@ python3 src/backend/config_validator.py
 
 - **[DEPLOYMENT.md](DEPLOYMENT.md)** - Complete deployment guide
 - **[VECTOR_MANAGEMENT.md](VECTOR_MANAGEMENT.md)** - Vector index management guide
+- **[docs/request-signing.md](docs/request-signing.md)** - AWS request signing configuration
 - **[docs/troubleshooting.md](docs/troubleshooting.md)** - Common issues
 - **[docs/api-spec.yaml](docs/api-spec.yaml)** - API documentation
 

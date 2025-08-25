@@ -250,7 +250,14 @@ class EnhancedDeploymentValidator:
         
         try:
             # Check basic credentials
-            sts_client = boto3.client('sts', region_name=self.region)
+            try:
+                import sys
+                from pathlib import Path
+                sys.path.append(str(Path(__file__).parent.parent / "lambda_function"))
+                from aws_client_factory import AWSClientFactory
+                sts_client = AWSClientFactory.create_client('sts', region_name=self.region, enable_signing=True)
+            except ImportError:
+                sts_client = boto3.client('sts', region_name=self.region)
             identity = sts_client.get_caller_identity()
             
             self.print_success(f"AWS credentials valid")
@@ -269,7 +276,10 @@ class EnhancedDeploymentValidator:
             
             for service, operation, description in permissions_to_test:
                 try:
-                    client = boto3.client(service, region_name=self.region)
+                    try:
+                        client = AWSClientFactory.create_client(service, region_name=self.region, enable_signing=True)
+                    except:
+                        client = boto3.client(service, region_name=self.region)
                     getattr(client, operation)()
                     self.print_success(f"{description}")
                     results["passed"] += 1
@@ -311,7 +321,10 @@ class EnhancedDeploymentValidator:
         }
         
         try:
-            quotas_client = boto3.client('service-quotas', region_name=self.region)
+            try:
+                quotas_client = AWSClientFactory.create_client('service-quotas', region_name=self.region, enable_signing=True)
+            except:
+                quotas_client = boto3.client('service-quotas', region_name=self.region)
             
             for service_name, service_info in self.quota_checks.items():
                 self.print_info(f"Checking {service_name.upper()} quotas...")
@@ -382,7 +395,10 @@ class EnhancedDeploymentValidator:
         
         for service_code, service_name in required_services:
             try:
-                client = boto3.client(service_code, region_name=self.region)
+                try:
+                    client = AWSClientFactory.create_client(service_code, region_name=self.region, enable_signing=True)
+                except:
+                    client = boto3.client(service_code, region_name=self.region)
                 
                 # Try a simple operation to verify service availability
                 if service_code == "bedrock":

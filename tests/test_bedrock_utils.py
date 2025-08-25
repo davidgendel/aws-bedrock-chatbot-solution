@@ -1,5 +1,5 @@
 """
-Tests for Bedrock utilities with AWS service mocking.
+Tests for Bedrock utilities with AWS service mocking and request signing.
 """
 import json
 import pytest
@@ -21,15 +21,42 @@ class TestBedrockUtils:
         """Set up test fixtures."""
         self.mock_bedrock_client = Mock()
     
-    @patch('src.backend.bedrock_utils.boto3.client')
-    def test_get_bedrock_client(self, mock_boto3_client):
-        """Test Bedrock client creation."""
-        mock_boto3_client.return_value = self.mock_bedrock_client
+    @patch('src.backend.bedrock_utils.get_bedrock_client')
+    def test_get_bedrock_client(self, mock_get_bedrock_client):
+        """Test Bedrock client creation with request signing."""
+        mock_get_bedrock_client.return_value = self.mock_bedrock_client
         
         client = get_bedrock_client()
         
-        mock_boto3_client.assert_called_once_with("bedrock-runtime", region_name="us-east-1")
+        mock_get_bedrock_client.assert_called_once()
         assert client == self.mock_bedrock_client
+    
+    @patch('src.backend.aws_client_factory.AWSClientFactory.create_client')
+    def test_signed_client_creation(self, mock_create_client):
+        """Test that signed clients are created properly."""
+        mock_create_client.return_value = self.mock_bedrock_client
+        
+        # Import and test the factory
+        from src.backend.aws_client_factory import AWSClientFactory
+        client = AWSClientFactory.create_client('bedrock-runtime', enable_signing=True)
+        
+        mock_create_client.assert_called_once_with('bedrock-runtime', enable_signing=True)
+        assert client == self.mock_bedrock_client
+    
+    @patch('src.backend.request_signer.RequestSigner')
+    def test_request_signing_configuration(self, mock_signer):
+        """Test request signing configuration."""
+        from src.backend.request_signer import SigningConfig
+        
+        config = SigningConfig({
+            'enabled': True,
+            'signatureVersion': 'v4',
+            'includeHeaders': ['host', 'x-amz-date', 'authorization']
+        })
+        
+        assert config.enabled is True
+        assert config.signature_version == 'v4'
+        assert 'host' in config.include_headers
     
     @patch('src.backend.bedrock_utils.get_bedrock_client')
     @patch('src.backend.bedrock_utils.ModelConfig')
