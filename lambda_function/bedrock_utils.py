@@ -15,9 +15,12 @@ from botocore.exceptions import ClientError
 try:
     from .aws_utils import get_aws_region
     from .model_config import ModelConfig
+    from .cost_monitor import track_tokens, track_cache_hit, track_cache_miss
+    # track_api_call is a method of CostMonitor, not a standalone function
 except ImportError:
     from aws_utils import get_aws_region
     from model_config import ModelConfig
+    from cost_monitor import track_tokens, track_cache_hit, track_cache_miss
 
 # Initialize logger
 logger = logging.getLogger(__name__)
@@ -175,21 +178,30 @@ def cached_apply_guardrails(text: str, guardrail_id: Optional[str] = None, guard
 
 
 def get_bedrock_client() -> Any:
-    """Get Bedrock runtime client."""
-    return boto3.client("bedrock-runtime", region_name=get_aws_region())
+    """Get Bedrock runtime client with request signing."""
+    try:
+        from .aws_utils import get_bedrock_client as get_signed_bedrock_client
+        return get_signed_bedrock_client(enable_signing=True)
+    except ImportError:
+        from aws_utils import get_bedrock_client as get_signed_bedrock_client
+        return get_signed_bedrock_client(enable_signing=True)
 
 
-def generate_embeddings(text: str, model_id: Optional[str] = None) -> List[float]:
+def generate_embeddings(text: str, model_id: Optional[str] = None, conversation_id: Optional[str] = None) -> List[float]:
     """
     Generate embeddings for text using Amazon Titan.
     
     Args:
         text: Text to generate embeddings for
         model_id: Optional model ID (used to determine embedding model)
+        conversation_id: Optional conversation ID for cost tracking
         
     Returns:
         List of embedding values
     """
+    import time
+    start_time = time.time()
+    
     try:
         bedrock_client = get_bedrock_client()
         
@@ -212,6 +224,47 @@ def generate_embeddings(text: str, model_id: Optional[str] = None) -> List[float
         # Parse response
         response_body = json.loads(response["body"].read())
         
+        # Track cost metrics
+        try:
+            # Estimate tokens for embedding (rough approximation)
+            estimated_tokens = len(text) // 4  # Rough token estimation
+            duration_ms = (time.time() - start_time) * 1000
+            
+            # Track token usage for embeddings
+            track_tokens(
+                input_tokens=estimated_tokens,
+                output_tokens=0,  # Embeddings don't have output tokens
+                model_id=embedding_model,
+                conversation_id=conversation_id,
+                cached=False,
+                metadata={'operation': 'embedding_generation', 'text_length': len(text)}
+            )
+            
+            # Track API call
+            try:
+                from .cost_monitor import get_cost_monitor
+                cost_monitor = get_cost_monitor()
+                cost_monitor.track_api_call(
+                    api_type='bedrock_embedding',
+                    duration_ms=duration_ms,
+                    conversation_id=conversation_id,
+                    metadata={'model_id': embedding_model}
+                )
+            except ImportError:
+                from cost_monitor import get_cost_monitor
+                cost_monitor = get_cost_monitor()
+                cost_monitor.track_api_call(
+                    api_type='bedrock_embedding',
+                    duration_ms=duration_ms,
+                    conversation_id=conversation_id,
+                    metadata={'model_id': embedding_model}
+                )
+            except Exception as e:
+                logger.debug(f"Failed to track API call: {e}")
+            
+        except Exception as e:
+            logger.debug(f"Failed to track embedding costs: {e}")
+        
         return response_body["embedding"]
         
     except Exception as e:
@@ -219,17 +272,21 @@ def generate_embeddings(text: str, model_id: Optional[str] = None) -> List[float
         raise
 
 
-def generate_response(prompt: str, model_id: Optional[str] = None) -> str:
+def generate_response(prompt: str, model_id: Optional[str] = None, conversation_id: Optional[str] = None) -> str:
     """
-    Generate response using Bedrock model.
+    Generate response using Bedrock model with cost tracking.
     
     Args:
         prompt: Input prompt
         model_id: Model ID to use (defaults to configured model)
+        conversation_id: Optional conversation ID for cost tracking
         
     Returns:
         Generated response text
     """
+    import time
+    start_time = time.time()
+    
     try:
         bedrock_client = get_bedrock_client()
         
@@ -251,14 +308,69 @@ def generate_response(prompt: str, model_id: Optional[str] = None) -> str:
         response_body = json.loads(response["body"].read())
         
         # Extract text based on model type
-        return ModelConfig.extract_text_from_response(response_body, model_id)
+        response_text = ModelConfig.extract_text_from_response(response_body, model_id)
+        
+        # Track cost metrics
+        try:
+            duration_ms = (time.time() - start_time) * 1000
+            
+            # Extract token usage from response if available
+            invocation_metrics = response_body.get("amazon-bedrock-invocationMetrics", {})
+            input_tokens = invocation_metrics.get("inputTokenCount", len(prompt) // 4)  # Fallback estimation
+            output_tokens = invocation_metrics.get("outputTokenCount", len(response_text) // 4)  # Fallback estimation
+            
+            # Track token usage
+            track_tokens(
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                model_id=model_id,
+                conversation_id=conversation_id,
+                cached=False,
+                metadata={
+                    'operation': 'text_generation',
+                    'prompt_length': len(prompt),
+                    'response_length': len(response_text),
+                    'has_invocation_metrics': bool(invocation_metrics)
+                }
+            )
+            
+            # Track API call
+            try:
+                from .cost_monitor import get_cost_monitor
+                cost_monitor = get_cost_monitor()
+                cost_monitor.track_api_call(
+                    api_type='bedrock_text_generation',
+                    duration_ms=duration_ms,
+                    conversation_id=conversation_id,
+                    metadata={'model_id': model_id}
+                )
+            except ImportError:
+                from cost_monitor import get_cost_monitor
+                cost_monitor = get_cost_monitor()
+                cost_monitor.track_api_call(
+                    api_type='bedrock_text_generation',
+                    duration_ms=duration_ms,
+                    conversation_id=conversation_id,
+                    metadata={'model_id': model_id}
+                )
+            except Exception as e:
+                logger.debug(f"Failed to track API call: {e}")
+            
+        except Exception as e:
+            logger.debug(f"Failed to track response generation costs: {e}")
+        
+        return response_text
+        
+    except Exception as e:
+        logger.error(f"Error generating response: {e}")
+        raise
         
     except Exception as e:
         logger.error(f"Error generating response: {e}")
         raise
 
 
-def generate_cached_response(prompt: str, model_id: Optional[str] = None, use_bedrock_caching: bool = True) -> Dict[str, Any]:
+def generate_cached_response(prompt: str, model_id: Optional[str] = None, use_bedrock_caching: bool = True, conversation_id: Optional[str] = None) -> Dict[str, Any]:
     """
     Generate response with prompt caching and AWS Bedrock native caching support.
     
@@ -266,10 +378,14 @@ def generate_cached_response(prompt: str, model_id: Optional[str] = None, use_be
         prompt: Input prompt
         model_id: Model ID to use (defaults to configured model)
         use_bedrock_caching: Whether to use AWS Bedrock native prompt caching
+        conversation_id: Optional conversation ID for cost tracking
         
     Returns:
         Dictionary with response text and cache metadata
     """
+    import time
+    start_time = time.time()
+    
     try:
         if model_id is None:
             model_id = ModelConfig.get_model_id()
@@ -277,6 +393,17 @@ def generate_cached_response(prompt: str, model_id: Optional[str] = None, use_be
         # Check prompt cache first
         cached_response = get_cached_prompt_response(prompt, model_id)
         if cached_response:
+            # Track cache hit
+            try:
+                track_cache_hit(
+                    cache_type='prompt_cache',
+                    conversation_id=conversation_id,
+                    cost_saved=0.001,  # Estimated cost saved by cache hit
+                    metadata={'model_id': model_id, 'prompt_length': len(prompt)}
+                )
+            except Exception as e:
+                logger.debug(f"Failed to track cache hit: {e}")
+            
             return {
                 "response": cached_response,
                 "cached": True,
@@ -317,6 +444,71 @@ def generate_cached_response(prompt: str, model_id: Optional[str] = None, use_be
         
         # Check if Bedrock used its native caching
         bedrock_cached = response_body.get("amazon-bedrock-invocationMetrics", {}).get("inputTokenCount", 0) == 0
+        
+        # Track cost metrics
+        try:
+            duration_ms = (time.time() - start_time) * 1000
+            
+            # Extract token usage from response
+            invocation_metrics = response_body.get("amazon-bedrock-invocationMetrics", {})
+            input_tokens = invocation_metrics.get("inputTokenCount", len(prompt) // 4)
+            output_tokens = invocation_metrics.get("outputTokenCount", len(response_text) // 4)
+            
+            # Track token usage (only if not cached by Bedrock)
+            if not bedrock_cached:
+                track_tokens(
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    model_id=model_id,
+                    conversation_id=conversation_id,
+                    cached=False,
+                    metadata={
+                        'operation': 'cached_text_generation',
+                        'bedrock_cached': bedrock_cached,
+                        'prompt_length': len(prompt),
+                        'response_length': len(response_text)
+                    }
+                )
+            else:
+                # Track Bedrock cache hit
+                track_cache_hit(
+                    cache_type='bedrock_native',
+                    conversation_id=conversation_id,
+                    cost_saved=0.002,  # Estimated cost saved by Bedrock cache
+                    metadata={'model_id': model_id}
+                )
+            
+            # Track cache miss for Lambda memory cache
+            track_cache_miss(
+                cache_type='prompt_cache',
+                conversation_id=conversation_id,
+                metadata={'model_id': model_id}
+            )
+            
+            # Track API call
+            try:
+                from .cost_monitor import get_cost_monitor
+                cost_monitor = get_cost_monitor()
+                cost_monitor.track_api_call(
+                    api_type='bedrock_cached_generation',
+                    duration_ms=duration_ms,
+                    conversation_id=conversation_id,
+                    metadata={'model_id': model_id, 'bedrock_cached': bedrock_cached}
+                )
+            except ImportError:
+                from cost_monitor import get_cost_monitor
+                cost_monitor = get_cost_monitor()
+                cost_monitor.track_api_call(
+                    api_type='bedrock_cached_generation',
+                    duration_ms=duration_ms,
+                    conversation_id=conversation_id,
+                    metadata={'model_id': model_id, 'bedrock_cached': bedrock_cached}
+                )
+            except Exception as e:
+                logger.debug(f"Failed to track API call: {e}")
+            
+        except Exception as e:
+            logger.debug(f"Failed to track cached response costs: {e}")
         
         return {
             "response": response_text,
@@ -465,7 +657,7 @@ def apply_guardrails(text: str, guardrail_id: Optional[str] = None, guardrail_ve
                 "reasons": []
             }
         
-        bedrock_client = boto3.client("bedrock-runtime", region_name=get_aws_region())
+        bedrock_client = get_bedrock_client()
         
         # Apply guardrail
         response = bedrock_client.apply_guardrail(

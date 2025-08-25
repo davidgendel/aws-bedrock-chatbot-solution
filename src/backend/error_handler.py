@@ -19,6 +19,7 @@ class ErrorType(Enum):
     WEBSOCKET_ERROR = "WEBSOCKET_ERROR"
     AUTHENTICATION_ERROR = "AUTHENTICATION_ERROR"
     AUTHORIZATION_ERROR = "AUTHORIZATION_ERROR"
+    SIGNING_ERROR = "SIGNING_ERROR"
     RATE_LIMIT_ERROR = "RATE_LIMIT_ERROR"
     INTERNAL_SERVER_ERROR = "INTERNAL_SERVER_ERROR"
     EXTERNAL_SERVICE_ERROR = "EXTERNAL_SERVICE_ERROR"
@@ -41,6 +42,13 @@ class ChatbotError(Exception):
         self.context = context or {}
         self.timestamp = datetime.utcnow().isoformat()
         super().__init__(self.message)
+
+
+class SigningError(ChatbotError):
+    """Exception raised for request signing errors."""
+    
+    def __init__(self, message: str, original_error: Optional[Exception] = None, context: Optional[Dict[str, Any]] = None):
+        super().__init__(message, ErrorType.SIGNING_ERROR, original_error, context)
 
 
 class DatabaseError(ChatbotError):
@@ -145,8 +153,10 @@ def _classify_error(error: Exception) -> ErrorType:
     if any(rate_term in error_message for rate_term in ['throttl', 'rate limit', 'too many requests']):
         return ErrorType.RATE_LIMIT_ERROR
     
-    # Authentication/Authorization
-    if any(auth_term in error_message for auth_term in ['unauthorized', 'forbidden', 'access denied']):
+    # Authentication/Authorization/Signing
+    if any(auth_term in error_message for auth_term in ['unauthorized', 'forbidden', 'access denied', 'signature', 'credential']):
+        if any(signing_term in error_message.lower() for signing_term in ['signature', 'signing', 'sigv4']):
+            return ErrorType.SIGNING_ERROR
         return ErrorType.AUTHORIZATION_ERROR
     
     # Default to internal server error

@@ -32,6 +32,7 @@ try:
     from .model_config import ModelConfig
     from .s3_vector_utils import query_similar_vectors, cleanup_old_vectors
     from .validation import validate_input, validate_websocket_input
+    from .cost_monitor import get_cost_monitor, flush_cost_metrics, get_cost_summary
 except ImportError:
     # Fall back to absolute imports (for Lambda environment)
     from aws_utils import get_aws_region
@@ -52,6 +53,7 @@ except ImportError:
     from model_config import ModelConfig
     from s3_vector_utils import query_similar_vectors, cleanup_old_vectors
     from validation import validate_input, validate_websocket_input
+    from cost_monitor import get_cost_monitor, flush_cost_metrics, get_cost_summary
 
 # Initialize logger
 logger = get_chatbot_logger(__name__)
@@ -165,7 +167,7 @@ def is_retryable_error(error: Exception) -> bool:
 
 def handle_chat_request(body: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Handle chat requests.
+    Handle chat requests with cost tracking.
     
     Args:
         body: Request body
@@ -174,6 +176,9 @@ def handle_chat_request(body: Dict[str, Any]) -> Dict[str, Any]:
         Chat response
     """
     try:
+        # Extract conversation ID for cost tracking
+        conversation_id = body.get("conversationId") or body.get("sessionId") or f"chat_{int(time.time())}"
+        
         # Validate input
         try:
             message = validate_input(body.get("message", ""))
@@ -189,10 +194,31 @@ def handle_chat_request(body: Dict[str, Any]) -> Dict[str, Any]:
         # Check cache first (unified cache manager handles security checks)
         cached_response = get_cached_response(message)
         if cached_response:
+            # Track cache hit
+            try:
+                from .cost_monitor import track_cache_hit
+                track_cache_hit(
+                    cache_type='response_cache',
+                    conversation_id=conversation_id,
+                    cost_saved=0.001,  # Estimated cost saved
+                    metadata={'message_length': len(message)}
+                )
+            except ImportError:
+                from cost_monitor import track_cache_hit
+                track_cache_hit(
+                    cache_type='response_cache',
+                    conversation_id=conversation_id,
+                    cost_saved=0.001,  # Estimated cost saved
+                    metadata={'message_length': len(message)}
+                )
+            except Exception as e:
+                logger.debug(f"Failed to track cache hit: {e}")
+            
             return create_success_response({
                 "response": cached_response,
                 "cached": True,
-                "model": ModelConfig.get_model_id()
+                "model": ModelConfig.get_model_id(),
+                "conversationId": conversation_id
             })
         
         # Apply guardrails to user input
@@ -206,16 +232,40 @@ def handle_chat_request(body: Dict[str, Any]) -> Dict[str, Any]:
             return create_error_response(error, status_code=400)
         
         # Generate embeddings for the query
-        embedding = generate_embeddings(message)
+        embedding = generate_embeddings(message, conversation_id=conversation_id)
         
         # Check context cache first
         cached_docs = get_cached_context(embedding, limit=3, threshold=0.45)
         if cached_docs:
             logger.debug("Using cached document context")
             relevant_docs = cached_docs
+            # Track cache hit
+            try:
+                from .cost_monitor import track_cache_hit
+                track_cache_hit(
+                    cache_type='context_cache',
+                    conversation_id=conversation_id,
+                    cost_saved=0.0004,  # Estimated vector query cost saved
+                    metadata={'docs_count': len(cached_docs)}
+                )
+            except ImportError:
+                from cost_monitor import track_cache_hit
+                track_cache_hit(
+                    cache_type='context_cache',
+                    conversation_id=conversation_id,
+                    cost_saved=0.0004,  # Estimated vector query cost saved
+                    metadata={'docs_count': len(cached_docs)}
+                )
+            except Exception as e:
+                logger.debug(f"Failed to track context cache hit: {e}")
         else:
             # Retrieve relevant documents using S3 Vectors
-            relevant_docs = query_similar_vectors(embedding, limit=3, similarity_threshold=0.45)
+            relevant_docs = query_similar_vectors(
+                embedding, 
+                limit=3, 
+                similarity_threshold=0.45,
+                conversation_id=conversation_id
+            )
             # Cache the retrieved context
             cache_context(embedding, limit=3, threshold=0.45, context=relevant_docs)
             logger.debug("Cached new document context")
@@ -283,21 +333,74 @@ Please provide a brief, conversational response (2-3 sentences max) based on the
         # If streaming is requested and this is not a WebSocket connection, use non-streaming response
         if not streaming:
             # Use cached response generation with Bedrock native caching
-            response_result = generate_cached_response(prompt, model_id, use_bedrock_caching=True)
+            response_result = generate_cached_response(
+                prompt, 
+                model_id, 
+                use_bedrock_caching=True,
+                conversation_id=conversation_id
+            )
             response = response_result["response"]
             
             # Cache the response using unified cache manager (if not already cached)
             if not response_result["cached"]:
                 cache_response(message, response)
+                # Track cache miss
+                try:
+                    from .cost_monitor import track_cache_miss
+                    track_cache_miss(
+                        cache_type='response_cache',
+                        conversation_id=conversation_id,
+                        metadata={'message_length': len(message)}
+                    )
+                except ImportError:
+                    from cost_monitor import track_cache_miss
+                    track_cache_miss(
+                        cache_type='response_cache',
+                        conversation_id=conversation_id,
+                        metadata={'message_length': len(message)}
+                    )
+                except Exception as e:
+                    logger.debug(f"Failed to track cache miss: {e}")
             
-            # Return response with cache metadata
-            return create_success_response({
+            # Flush cost metrics (async, non-blocking)
+            try:
+                flush_cost_metrics()
+            except Exception as e:
+                logger.debug(f"Failed to flush cost metrics: {e}")
+            
+            # Get cost summary for this conversation
+            cost_info = {}
+            try:
+                cost_monitor = get_cost_monitor()
+                conversation_cost = cost_monitor.get_conversation_cost(conversation_id)
+                if conversation_cost:
+                    cost_info = {
+                        "conversationCost": round(conversation_cost.total_cost_estimate, 6),
+                        "totalTokens": conversation_cost.total_tokens,
+                        "vectorQueries": conversation_cost.vector_queries,
+                        "cacheHitRate": round(
+                            conversation_cost.cache_hits / max(conversation_cost.cache_hits + conversation_cost.cache_misses, 1),
+                            3
+                        )
+                    }
+            except Exception as e:
+                logger.debug(f"Failed to get cost info: {e}")
+            
+            # Return response with cache metadata and cost info
+            response_data = {
                 "response": response,
                 "cached": response_result["cached"],
                 "cache_type": response_result.get("cache_type", "none"),
                 "bedrock_cached": response_result.get("bedrock_cached", False),
-                "model": model_id
-            })
+                "model": model_id,
+                "conversationId": conversation_id
+            }
+            
+            # Add cost info if available
+            if cost_info:
+                response_data["costInfo"] = cost_info
+            
+            return create_success_response(response_data)
         else:
             # For streaming, we'll use WebSocket API
             return {
@@ -395,7 +498,7 @@ def stream_response_to_connection(
         prompt: Input prompt
         model_id: Bedrock model ID
     """
-    bedrock_client = boto3.client("bedrock-runtime", region_name=get_aws_region())
+    bedrock_client = get_bedrock_client()
     
     try:
         # Send initial message with connection ID
@@ -618,10 +721,11 @@ def _initialize_websocket_api_client(event: Dict[str, Any]) -> Any:
         if not stage or not isinstance(stage, str):
             raise ValueError("Invalid stage name")
         
-        return boto3.client(
+        return get_aws_client(
             "apigatewaymanagementapi",
-            endpoint_url=f"https://{domain}/{stage}",
-            region_name=region
+            region_name=region,
+            enable_signing=True,
+            endpoint_url=f"https://{domain}/{stage}"
         )
     except Exception as e:
         logger.error(f"Error initializing WebSocket API client: {e}")

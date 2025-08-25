@@ -51,6 +51,7 @@ class ChatbotRagStack(cdk.Stack):
         self.cloudfront = self._create_cloudfront_distribution()
         self.waf = self._create_waf()
         self.monitoring = self._create_monitoring()
+        self.cost_monitoring = self._create_cost_monitoring()  # Add cost monitoring
         self._create_outputs()
 
     def _create_vector_indexes(self) -> Dict[str, Any]:
@@ -96,7 +97,7 @@ class ChatbotRagStack(cdk.Stack):
                 "PYTHONPATH": "/opt/python:/var/runtime",
             },
             code=lambda_.Code.from_inline(f"""
-# Ensure we're using the latest boto3 version with S3 Vectors support
+# Ensure we're using the latest boto3 version with S3 Vectors support and request signing
 import sys
 import os
 
@@ -109,6 +110,14 @@ import boto3
 import json
 import logging
 import urllib3
+
+# Import request signing utilities
+try:
+    from aws_client_factory import AWSClientFactory
+    from request_signer import SigningConfig
+except ImportError:
+    # Fallback for CDK environment
+    pass
 
 # Log boto3 version for debugging
 logger = logging.getLogger()
@@ -155,8 +164,13 @@ def handler(event, context):
         if request_type == 'Create':
             # Create S3 Vector bucket and index using CORRECT S3 Vectors service API
             try:
-                s3vectors_client = boto3.client('s3vectors', region_name='{self.region}')
-                logger.info("Successfully created s3vectors client")
+                # Use signed client for S3 Vectors operations
+                try:
+                    s3vectors_client = AWSClientFactory.create_client('s3vectors', region_name='{self.region}', enable_signing=True)
+                except:
+                    # Fallback to regular boto3 client if factory not available
+                    s3vectors_client = boto3.client('s3vectors', region_name='{self.region}')
+                logger.info("Successfully created s3vectors client with request signing")
                 logger.info(f"Available services: {{boto3.Session().get_available_services()}}")
             except Exception as client_error:
                 logger.error(f"Failed to create s3vectors client: {{client_error}}")
@@ -432,6 +446,27 @@ def handler(event, context):
             )
         )
 
+        # Add permissions for CloudWatch metrics (cost monitoring)
+        lambda_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "cloudwatch:PutMetricData",
+                    "cloudwatch:GetMetricStatistics",
+                    "cloudwatch:ListMetrics"
+                ],
+                resources=["*"],
+                conditions={
+                    "StringEquals": {
+                        "cloudwatch:namespace": [
+                            "Chatbot/Costs",
+                            "AWS/Lambda",
+                            "AWS/ApiGateway"
+                        ]
+                    }
+                }
+            )
+        )
+
         # Add permissions for S3 Vectors service (will be refined after vector indexes are created)
         lambda_role.add_to_policy(
             iam.PolicyStatement(
@@ -584,7 +619,6 @@ def handler(event, context):
             concurrent_executions = self.config["lambda"]["chatbot"]["provisionedConcurrency"]["concurrentExecutions"]
             
             # Note: Provisioned concurrency temporarily disabled for CDK compatibility
-            # TODO: Re-enable when CDK version supports CfnProvisionedConcurrencyConfig
             pass
 
         # Document processing is now handled locally, not via Lambda
@@ -952,3 +986,174 @@ def handler(event, context):
             value=f"https://{self.cloudfront.distribution_domain_name}",
             description="CloudFront distribution URL",
         )
+
+        # Cost monitoring outputs
+        if hasattr(self, 'cost_monitoring') and self.cost_monitoring:
+            cdk.CfnOutput(
+                self, "CostDashboardUrl",
+                value=f"https://{self.region}.console.aws.amazon.com/cloudwatch/home?region={self.region}#dashboards:name={self.cost_monitoring['dashboard'].dashboard_name}",
+                description="CloudWatch Cost Monitoring Dashboard URL",
+            )
+
+    def _create_cost_monitoring(self) -> Dict[str, Any]:
+        """Create cost monitoring infrastructure."""
+        cost_config = self.config.get("costMonitoring", {})
+        
+        if not cost_config.get("enabled", True):
+            return {}
+        
+        # CloudWatch Dashboard for cost monitoring
+        dashboard = cloudwatch.Dashboard(
+            self, "CostMonitoringDashboard",
+            dashboard_name=f"ChatbotCosts-{self.stack_name}",
+            period_override=cloudwatch.PeriodOverride.AUTO,
+            start="-PT24H",  # Last 24 hours
+            widgets=[
+                [
+                    # Token usage metrics
+                    cloudwatch.GraphWidget(
+                        title="Token Usage",
+                        left=[
+                            cloudwatch.Metric(
+                                namespace="Chatbot/Costs",
+                                metric_name="TokenUsage",
+                                statistic="Sum",
+                                period=cdk.Duration.minutes(5)
+                            )
+                        ],
+                        width=12,
+                        height=6
+                    )
+                ],
+                [
+                    # Cost metrics
+                    cloudwatch.GraphWidget(
+                        title="Conversation Costs (USD)",
+                        left=[
+                            cloudwatch.Metric(
+                                namespace="Chatbot/Costs",
+                                metric_name="ConversationCost",
+                                statistic="Sum",
+                                period=cdk.Duration.minutes(15)
+                            )
+                        ],
+                        width=12,
+                        height=6
+                    )
+                ],
+                [
+                    # Cache performance
+                    cloudwatch.GraphWidget(
+                        title="Cache Hit Rate",
+                        left=[
+                            cloudwatch.Metric(
+                                namespace="Chatbot/Costs",
+                                metric_name="CacheHit",
+                                statistic="Sum",
+                                period=cdk.Duration.minutes(5)
+                            ),
+                            cloudwatch.Metric(
+                                namespace="Chatbot/Costs",
+                                metric_name="CacheMiss",
+                                statistic="Sum",
+                                period=cdk.Duration.minutes(5)
+                            )
+                        ],
+                        width=6,
+                        height=6
+                    ),
+                    # Vector query metrics
+                    cloudwatch.GraphWidget(
+                        title="Vector Queries",
+                        left=[
+                            cloudwatch.Metric(
+                                namespace="Chatbot/Costs",
+                                metric_name="VectorQuery",
+                                statistic="Sum",
+                                period=cdk.Duration.minutes(5)
+                            )
+                        ],
+                        width=6,
+                        height=6
+                    )
+                ],
+                [
+                    # API call metrics
+                    cloudwatch.GraphWidget(
+                        title="API Calls by Type",
+                        left=[
+                            cloudwatch.Metric(
+                                namespace="Chatbot/Costs",
+                                metric_name="APICall",
+                                statistic="Sum",
+                                period=cdk.Duration.minutes(5),
+                                dimensions_map={"APIType": "bedrock_text_generation"}
+                            ),
+                            cloudwatch.Metric(
+                                namespace="Chatbot/Costs",
+                                metric_name="APICall",
+                                statistic="Sum",
+                                period=cdk.Duration.minutes(5),
+                                dimensions_map={"APIType": "bedrock_embedding"}
+                            ),
+                            cloudwatch.Metric(
+                                namespace="Chatbot/Costs",
+                                metric_name="APICall",
+                                statistic="Sum",
+                                period=cdk.Duration.minutes(5),
+                                dimensions_map={"APIType": "s3_vector_query"}
+                            )
+                        ],
+                        width=12,
+                        height=6
+                    )
+                ]
+            ]
+        )
+        
+        # Cost alarms
+        alarms = []
+        alert_config = cost_config.get("costAlerts", {})
+        
+        if alert_config.get("enabled", True):
+            # Daily cost alarm
+            daily_threshold = alert_config.get("dailyThreshold", 5.0)
+            daily_alarm = cloudwatch.Alarm(
+                self, "DailyCostAlarm",
+                alarm_name=f"ChatbotDailyCost-{self.stack_name}",
+                alarm_description=f"Daily chatbot costs exceed ${daily_threshold}",
+                metric=cloudwatch.Metric(
+                    namespace="Chatbot/Costs",
+                    metric_name="ConversationCost",
+                    statistic="Sum",
+                    period=cdk.Duration.hours(24)
+                ),
+                threshold=daily_threshold,
+                evaluation_periods=1,
+                comparison_operator=cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD
+            )
+            alarms.append(daily_alarm)
+            
+            # High conversation cost alarm
+            conversation_threshold = alert_config.get("conversationThreshold", 0.10)
+            conversation_alarm = cloudwatch.Alarm(
+                self, "HighConversationCostAlarm",
+                alarm_name=f"ChatbotHighConversationCost-{self.stack_name}",
+                alarm_description=f"Single conversation cost exceeds ${conversation_threshold}",
+                metric=cloudwatch.Metric(
+                    namespace="Chatbot/Costs",
+                    metric_name="ConversationCost",
+                    statistic="Maximum",
+                    period=cdk.Duration.minutes(5)
+                ),
+                threshold=conversation_threshold,
+                evaluation_periods=1,
+                comparison_operator=cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD
+            )
+            alarms.append(conversation_alarm)
+        
+        return {
+            "dashboard": dashboard,
+            "alarms": alarms,
+            "namespace": cost_config.get("cloudWatchNamespace", "Chatbot/Costs")
+        }

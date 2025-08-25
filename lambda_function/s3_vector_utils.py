@@ -17,9 +17,11 @@ from cachetools import TTLCache, LRUCache
 try:
     from .aws_utils import get_aws_region
     from .error_handler import DatabaseError, handle_error
+    from .cost_monitor import track_vector_query, track_cache_hit, track_cache_miss
 except ImportError:
     from aws_utils import get_aws_region
     from error_handler import DatabaseError, handle_error
+    from cost_monitor import track_vector_query, track_cache_hit, track_cache_miss
 
 logger = logging.getLogger(__name__)
 
@@ -180,22 +182,32 @@ def get_cache_stats() -> Dict[str, Any]:
 
 
 def get_s3_client() -> Any:
-    """Get S3 client."""
+    """Get S3 client with request signing."""
     global s3_client
     if s3_client is None:
-        s3_client = boto3.client("s3", region_name=get_aws_region())
+        try:
+            from .aws_utils import get_s3_client as get_signed_s3_client
+            s3_client = get_signed_s3_client(enable_signing=True)
+        except ImportError:
+            from aws_utils import get_s3_client as get_signed_s3_client
+            s3_client = get_signed_s3_client(enable_signing=True)
     return s3_client
 
 
 def get_s3_vectors_client() -> Any:
-    """Get S3 Vectors client."""
+    """Get S3 Vectors client with request signing."""
     global s3_vectors_client
     if s3_vectors_client is None:
         try:
-            # Use the S3 client with vector operations support
+            # Use the S3 client with vector operations support and request signing
             # S3 Vectors is integrated into the S3 service, not a separate service
-            s3_vectors_client = boto3.client("s3", region_name=get_aws_region())
-            logger.info("Using S3 client with vector operations support")
+            try:
+                from .aws_utils import get_s3_client as get_signed_s3_client
+                s3_vectors_client = get_signed_s3_client(enable_signing=True)
+            except ImportError:
+                from aws_utils import get_s3_client as get_signed_s3_client
+                s3_vectors_client = get_signed_s3_client(enable_signing=True)
+            logger.info("Using S3 client with vector operations support and request signing")
         except Exception as e:
             logger.error(f"Failed to create S3 client: {e}")
             raise
@@ -438,7 +450,8 @@ def query_similar_vectors(
     query_embedding: List[float], 
     limit: int = 3, 
     similarity_threshold: float = 0.45,
-    filters: Optional[Dict[str, Any]] = None
+    filters: Optional[Dict[str, Any]] = None,
+    conversation_id: Optional[str] = None
 ) -> List[Dict[str, Any]]:
     """
     Optimized vector similarity query using Amazon S3 Vectors native capabilities.
@@ -448,10 +461,14 @@ def query_similar_vectors(
         limit: Maximum number of results to return
         similarity_threshold: Minimum similarity threshold
         filters: Optional filters for the query
+        conversation_id: Optional conversation ID for cost tracking
         
     Returns:
         List of similar documents with similarity scores
     """
+    import time
+    start_time = time.time()
+    
     try:
         # Fast input validation
         if not query_embedding or limit <= 0:
@@ -529,20 +546,73 @@ def query_similar_vectors(
         # Optimized fallback using hierarchical search or batch processing
         try:
             # Try hierarchical search first (HNSW-like)
-            return _hierarchical_vector_search(
+            results = _hierarchical_vector_search(
                 query_embedding, limit, similarity_threshold, filters,
                 vector_bucket, index_name
             )
         except Exception as hierarchical_error:
             logger.debug(f"Hierarchical search failed: {hierarchical_error}")
             # Fall back to batch processing
-            return _query_vectors_optimized_batch(
-                query_embedding, limit, similarity_threshold, filters,
-                vector_bucket, index_name
+            try:
+                results = _query_vectors_optimized_batch(
+                    query_embedding, limit, similarity_threshold, filters,
+                    vector_bucket, index_name
+                )
+            except Exception as fallback_error:
+                logger.error(f"Optimized fallback failed: {fallback_error}")
+                results = []
+        
+        # Track cost metrics
+        try:
+            duration_ms = (time.time() - start_time) * 1000
+            vectors_searched = len(results) if results else 0
+            
+            # Track vector query cost
+            track_vector_query(
+                query_count=1,
+                vectors_searched=vectors_searched,
+                cache_hit=False,  # This is a direct query, not cached
+                conversation_id=conversation_id,
+                metadata={
+                    'similarity_threshold': similarity_threshold,
+                    'limit': limit,
+                    'has_filters': bool(filters),
+                    'duration_ms': duration_ms
+                }
             )
-        except Exception as fallback_error:
-            logger.error(f"Optimized fallback failed: {fallback_error}")
-            return []
+            
+            # Track API call
+            try:
+                from .cost_monitor import get_cost_monitor
+                cost_monitor = get_cost_monitor()
+                cost_monitor.track_api_call(
+                    api_type='s3_vector_query',
+                    duration_ms=duration_ms,
+                    conversation_id=conversation_id,
+                    metadata={
+                        'vectors_found': vectors_searched,
+                        'similarity_threshold': similarity_threshold
+                    }
+                )
+            except ImportError:
+                from cost_monitor import get_cost_monitor
+                cost_monitor = get_cost_monitor()
+                cost_monitor.track_api_call(
+                    api_type='s3_vector_query',
+                    duration_ms=duration_ms,
+                    conversation_id=conversation_id,
+                    metadata={
+                        'vectors_found': vectors_searched,
+                        'similarity_threshold': similarity_threshold
+                    }
+                )
+            except Exception as e:
+                logger.debug(f"Failed to track API call: {e}")
+            
+        except Exception as e:
+            logger.debug(f"Failed to track vector query costs: {e}")
+        
+        return results
         
     except Exception as e:
         logger.error(f"Failed to query similar vectors: {e}")

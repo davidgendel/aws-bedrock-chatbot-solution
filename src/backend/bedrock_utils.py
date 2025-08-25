@@ -175,8 +175,13 @@ def cached_apply_guardrails(text: str, guardrail_id: Optional[str] = None, guard
 
 
 def get_bedrock_client() -> Any:
-    """Get Bedrock runtime client."""
-    return boto3.client("bedrock-runtime", region_name=get_aws_region())
+    """Get Bedrock runtime client with request signing."""
+    try:
+        from .aws_utils import get_bedrock_client as get_signed_bedrock_client
+        return get_signed_bedrock_client(enable_signing=True)
+    except ImportError:
+        from aws_utils import get_bedrock_client as get_signed_bedrock_client
+        return get_signed_bedrock_client(enable_signing=True)
 
 
 def generate_embeddings(text: str, model_id: Optional[str] = None) -> List[float]:
@@ -465,7 +470,7 @@ def apply_guardrails(text: str, guardrail_id: Optional[str] = None, guardrail_ve
                 "reasons": []
             }
         
-        bedrock_client = boto3.client("bedrock-runtime", region_name=get_aws_region())
+        bedrock_client = get_bedrock_client()
         
         # Apply guardrail
         response = bedrock_client.apply_guardrail(

@@ -187,7 +187,15 @@ def configure_application(region: str):
     print("Getting deployment outputs...")
     
     # Get stack outputs
-    cf_client = boto3.client("cloudformation", region_name=region)
+    # Use signed client for enhanced security
+    try:
+        import sys
+        from pathlib import Path
+        sys.path.append(str(Path(__file__).parent.parent / "lambda_function"))
+        from aws_client_factory import AWSClientFactory
+        cf_client = AWSClientFactory.create_client("cloudformation", region_name=region, enable_signing=True)
+    except ImportError:
+        cf_client = boto3.client("cloudformation", region_name=region)
     try:
         response = cf_client.describe_stacks(StackName=STACK_NAME)
         outputs = {}
@@ -212,7 +220,10 @@ def configure_application(region: str):
     
     # Get API key value
     print("Getting API key...")
-    apigw_client = boto3.client("apigateway", region_name=region)
+    try:
+        apigw_client = AWSClientFactory.create_client("apigateway", region_name=region, enable_signing=True)
+    except:
+        apigw_client = boto3.client("apigateway", region_name=region)
     try:
         response = apigw_client.get_api_key(
             apiKey=api_key_id,
@@ -267,7 +278,10 @@ def upload_frontend_assets(website_bucket: str, region: str):
     section("Uploading Frontend Assets")
     print(f"Uploading to S3 bucket: {website_bucket}")
     
-    s3_client = boto3.client("s3", region_name=region)
+    try:
+        s3_client = AWSClientFactory.create_client("s3", region_name=region, enable_signing=True)
+    except:
+        s3_client = boto3.client("s3", region_name=region)
     
     # Upload widget.js
     widget_path = Path("src/frontend/widget.js")
@@ -329,7 +343,10 @@ def configure_database_security(db_security_group: str, region: str):
     # Add IPv4 rules for EC2 and Lambda services in the configured region
     print(f"Adding IPv4 rules for EC2 and Lambda services in {region}...")
     
-    ec2_client = boto3.client("ec2", region_name=region)
+    try:
+        ec2_client = AWSClientFactory.create_client("ec2", region_name=region, enable_signing=True)
+    except:
+        ec2_client = boto3.client("ec2", region_name=region)
     
     # Note: These CIDR blocks are specific to us-east-1
     # For other regions, you would need to update these ranges

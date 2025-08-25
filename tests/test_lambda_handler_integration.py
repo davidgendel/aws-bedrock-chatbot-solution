@@ -4,7 +4,7 @@ Integration tests for Lambda handler with AWS service mocking.
 import json
 import pytest
 from unittest.mock import Mock, patch, MagicMock
-from moto import mock_apigatewaymanagementapi
+from moto import mock_aws
 
 from src.backend.lambda_handler import (
     lambda_handler,
@@ -216,7 +216,7 @@ class TestLambdaHandlerIntegration:
         body = json.loads(response["body"])
         assert "cache_stats" in body or "cache_sizes" in body
     
-    @mock_apigatewaymanagementapi
+    @mock_aws
     @patch('src.backend.lambda_handler.apply_guardrails')
     @patch('src.backend.lambda_handler.query_similar_vectors')
     @patch('src.backend.lambda_handler.generate_response')

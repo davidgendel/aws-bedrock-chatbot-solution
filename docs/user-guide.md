@@ -56,7 +56,7 @@ aws sts get-caller-identity
 ### Option 1: One-Command Deployment (Recommended for Beginners)
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/YOUR_USERNAME/aws-bedrock-chatbot-solution/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/your-github-username/aws-bedrock-chatbot-solution/main/install.sh | bash
 ```
 
 **Features:**
@@ -70,8 +70,8 @@ curl -sSL https://raw.githubusercontent.com/YOUR_USERNAME/aws-bedrock-chatbot-so
 ### Option 2: Atomic Deployment (Recommended for Production)
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/aws-bedrock-chatbot-solution.git
-cd chatbot-rag
+git clone https://github.com/your-github-username/aws-bedrock-chatbot-solution.git
+cd aws-bedrock-chatbot-solution
 ./deploy.sh deploy
 ```
 
@@ -87,8 +87,8 @@ cd chatbot-rag
 ### Option 3: Standard Manual Deployment
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/aws-bedrock-chatbot-solution.git
-cd chatbot-rag
+git clone https://github.com/your-github-username/aws-bedrock-chatbot-solution.git
+cd aws-bedrock-chatbot-solution
 ./deploy.sh
 ```
 

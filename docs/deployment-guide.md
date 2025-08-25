@@ -63,10 +63,10 @@ Before starting, make sure you have:
 
 2. **Run the installer**:
    ```bash
-   curl -sSL https://raw.githubusercontent.com/YOUR_USERNAME/aws-bedrock-chatbot-solution/main/install.sh | bash
+   curl -sSL https://raw.githubusercontent.com/your-github-username/aws-bedrock-chatbot-solution/main/install.sh | bash
    ```
 
-   **Replace `YOUR_USERNAME` with your actual GitHub username**
+   **Replace `your-github-username` with your actual GitHub username**
 
 3. **Wait for deployment** (15 minutes):
    The installer handles everything automatically!
@@ -75,11 +75,11 @@ Before starting, make sure you have:
 
 1. **Download the code**:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/aws-bedrock-chatbot-solution.git
+   git clone https://github.com/your-github-username/aws-bedrock-chatbot-solution.git
    cd aws-bedrock-chatbot-solution
    ```
 
-   **Replace `YOUR_USERNAME` with your actual GitHub username**
+   **Replace `your-github-username` with your actual GitHub username**
 
 2. **Run deployment**:
    ```bash
@@ -152,10 +152,10 @@ Copy the provided integration code to your website, for example:
 ### Get Help
 
 - 📖 [Troubleshooting Guide](troubleshooting.md)
-- 🐛 [Report Issues](https://github.com/YOUR_USERNAME/chatbot-rag/issues)
-- 💬 [Community Forum](https://github.com/YOUR_USERNAME/chatbot-rag/discussions)
+- 🐛 [Report Issues](https://github.com/your-github-username/aws-bedrock-chatbot-solution/issues)
+- 💬 [Community Forum](https://github.com/your-github-username/aws-bedrock-chatbot-solution/discussions)
 
-**Replace `YOUR_USERNAME` with your actual GitHub username in the URLs above.**
+**Replace `your-github-username` with your actual GitHub username in the URLs above.**
 
 ## 🔧 Managing Your Chatbot
 

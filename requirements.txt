@@ -1,6 +1,6 @@
-# Core AWS SDK with S3 Vector support - MINIMUM 1.39.17 for S3 Vectors
+# Core AWS SDK with S3 Vector support and enhanced request signing - MINIMUM 1.39.17 for S3 Vectors
 boto3>=1.39.17
-botocore>=1.39.17
+botocore[crt]>=1.39.17
 
 # CDK for infrastructure
 aws-cdk-lib>=2.100.0
@@ -25,7 +25,7 @@ nltk>=3.8.1,<4.0.0
 # JSON handling
 orjson>=3.9.0
 
-# Security
+# Security and request signing
 cryptography>=41.0.0
 
 # Configuration

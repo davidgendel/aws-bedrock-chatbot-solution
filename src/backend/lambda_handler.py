@@ -395,7 +395,7 @@ def stream_response_to_connection(
         prompt: Input prompt
         model_id: Bedrock model ID
     """
-    bedrock_client = boto3.client("bedrock-runtime", region_name=get_aws_region())
+    bedrock_client = get_bedrock_client()
     
     try:
         # Send initial message with connection ID
@@ -618,10 +618,11 @@ def _initialize_websocket_api_client(event: Dict[str, Any]) -> Any:
         if not stage or not isinstance(stage, str):
             raise ValueError("Invalid stage name")
         
-        return boto3.client(
+        return get_aws_client(
             "apigatewaymanagementapi",
-            endpoint_url=f"https://{domain}/{stage}",
-            region_name=region
+            region_name=region,
+            enable_signing=True,
+            endpoint_url=f"https://{domain}/{stage}"
         )
     except Exception as e:
         logger.error(f"Error initializing WebSocket API client: {e}")

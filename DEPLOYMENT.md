@@ -20,17 +20,17 @@ Your AWS user/role needs:
 ### One-Command Deployment
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/YOUR_USERNAME/aws-bedrock-chatbot-solution/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/your-github-username/aws-bedrock-chatbot-solution/main/install.sh | bash
 ```
 
-**⚠️ IMPORTANT**: Replace `YOUR_USERNAME` with your actual GitHub username.
+**⚠️ IMPORTANT**: Replace `your-github-username` with your actual GitHub username.
 
 **Expected time**: 15-20 minutes
 
 ## ⚡ Manual Deployment
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/aws-bedrock-chatbot-solution.git
+git clone https://github.com/your-github-username/aws-bedrock-chatbot-solution.git
 cd aws-bedrock-chatbot-solution
 ./deploy.sh deploy
 ```
