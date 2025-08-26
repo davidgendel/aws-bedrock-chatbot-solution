@@ -353,7 +353,7 @@ class RequestSigner:
                 method=method,
                 url=url,
                 headers=headers,
-                payload=payload if isinstance(payload, str) else payload.decode('utf-8', errors='ignore')
+                payload=self._extract_payload_content(payload)
             )
             
             # Update request headers - handle different header types
@@ -390,6 +390,28 @@ class RequestSigner:
         except Exception as e:
             logger.warning(f"Signature validation failed: {e}")
             return False
+    
+    def _extract_payload_content(self, payload) -> str:
+        """Extract content from various payload types including AwsChunkedWrapper."""
+        if isinstance(payload, str):
+            return payload
+        elif hasattr(payload, 'read'):
+            # Handle file-like objects
+            try:
+                content = payload.read()
+                if hasattr(payload, 'seek'):
+                    payload.seek(0)  # Reset for actual request
+                return content.decode('utf-8', errors='ignore') if isinstance(content, bytes) else str(content)
+            except Exception:
+                return str(payload)
+        elif hasattr(payload, 'decode'):
+            try:
+                return payload.decode('utf-8', errors='ignore')
+            except Exception:
+                return str(payload)
+        else:
+            # Handle AwsChunkedWrapper and other objects
+            return str(payload)
     
     def clear_cache(self):
         """Clear signature cache."""

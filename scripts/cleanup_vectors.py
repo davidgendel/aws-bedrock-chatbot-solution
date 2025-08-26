@@ -13,10 +13,11 @@ from typing import Any, Dict
 
 import boto3
 
-# Add the src directory to the path so we can import our modules
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+# Add the src/backend directory to the path so we can import our modules
+backend_path = str(Path(__file__).parent.parent / "src" / "backend")
+sys.path.insert(0, backend_path)
 
-from backend.s3_vector_utils import cleanup_old_vectors, list_vector_indexes
+from s3_vector_utils import cleanup_old_vectors, list_vector_indexes
 
 # Configure logging
 logging.basicConfig(

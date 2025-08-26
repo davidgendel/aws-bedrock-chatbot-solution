@@ -151,6 +151,23 @@ def get_s3_resource(enable_signing: bool = True) -> Any:
     return get_aws_resource("s3", enable_signing=enable_signing)
 
 
+def get_s3_vectors_client(enable_signing: bool = False) -> Any:
+    """
+    Get an S3 Vectors client. Note: Request signing not supported for S3 Vectors.
+    
+    Args:
+        enable_signing: Ignored for S3 Vectors (not supported)
+        
+    Returns:
+        S3 Vectors client
+    """
+    if enable_signing:
+        logger.warning("Request signing not supported for S3 Vectors, using standard client")
+    
+    import boto3
+    return boto3.client('s3vectors', region_name=get_aws_region())
+
+
 def get_dynamodb_client(enable_signing: bool = True) -> Any:
     """
     Get a DynamoDB client with optional signing.

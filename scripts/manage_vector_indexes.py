@@ -22,17 +22,17 @@ import sys
 from pathlib import Path
 from typing import Dict, Any, List
 
-# Add the src directory to the Python path
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+# Add the src/backend directory to the Python path
+backend_path = str(Path(__file__).parent.parent / "src" / "backend")
+sys.path.insert(0, backend_path)
 
-from backend.s3_vector_utils import (
+from s3_vector_utils import (
     list_vector_indexes,
     get_vector_index_info,
     create_vector_index,
     delete_vector_index,
     optimize_vector_index,
     get_vector_index_stats,
-    get_all_vector_stats,
     clear_all_caches,
     get_cache_stats
 )
@@ -257,7 +257,7 @@ class VectorIndexManager:
         print("=" * 50)
         
         try:
-            stats = get_all_vector_stats()
+            stats = get_vector_index_stats()
             
             if not stats.get("success"):
                 print(f"❌ Error getting statistics: {stats.get('error', 'Unknown error')}")

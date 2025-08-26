@@ -9,7 +9,10 @@ import sys
 from pathlib import Path
 
 # Import the local document processor
-from process_documents_locally import LocalDocumentProcessor
+try:
+    from process_documents_locally import LocalDocumentProcessor
+except ImportError:
+    from .process_documents_locally import LocalDocumentProcessor
 
 def main():
     """Main function - wrapper around the local document processor."""

@@ -193,21 +193,24 @@ def get_s3_client() -> Any:
 
 
 def get_s3_vectors_client() -> Any:
-    """Get S3 Vectors client with request signing."""
+    """Get S3 Vectors client. Note: S3 Vectors is a separate service from S3."""
     global s3_vectors_client
     if s3_vectors_client is None:
         try:
-            # Use the S3 client with vector operations support and request signing
-            # S3 Vectors is integrated into the S3 service, not a separate service
+            # Use the dedicated S3 Vectors client (separate service from S3)
+            # Request signing is not supported/needed for S3 Vectors
+            import boto3
             try:
-                from .aws_utils import get_s3_client as get_signed_s3_client
-                s3_vectors_client = get_signed_s3_client(enable_signing=True)
+                from .aws_utils import get_aws_region
+                region = get_aws_region()
             except ImportError:
-                from aws_utils import get_s3_client as get_signed_s3_client
-                s3_vectors_client = get_signed_s3_client(enable_signing=True)
-            logger.info("Using S3 client with vector operations support and request signing")
+                from aws_utils import get_aws_region
+                region = get_aws_region()
+            
+            s3_vectors_client = boto3.client('s3vectors', region_name=region)
+            logger.info("Using dedicated S3 Vectors client (no request signing)")
         except Exception as e:
-            logger.error(f"Failed to create S3 client: {e}")
+            logger.error(f"Failed to create S3 Vectors client: {e}")
             raise
     return s3_vectors_client
 
@@ -233,26 +236,15 @@ def create_vector_index(index_name: str, dimensions: int = 1536, similarity_metr
         
         # Try S3 Vectors native API first (most performant)
         try:
-            # Create vector index using S3 Vectors API with optimized configuration
-            response = s3_vectors_client.put_vector_index(
-                Bucket=vector_bucket,
-                VectorIndex={
-                    'Name': index_name,
-                    'VectorConfiguration': {
-                        'Dimensions': dimensions,
-                        'SimilarityMetric': similarity_metric,
-                        'IndexType': 'HNSW',  # Use HNSW for O(log n) search
-                        'HnswConfiguration': {
-                            'M': 16,  # Number of bi-directional links for each node
-                            'EfConstruction': 200,  # Size of dynamic candidate list
-                            'MaxM': 16,  # Maximum number of bi-directional links
-                            'MaxM0': 32,  # Maximum number of connections for layer 0
-                            'MlConstant': 1.0 / 2.303  # Level generation factor
-                        }
-                    }
-                }
+            # Create vector index using S3 Vectors API with correct method name
+            response = s3_vectors_client.create_index(
+                vectorBucketName=vector_bucket,
+                indexName=index_name,
+                dataType='float32',
+                dimension=dimensions,
+                distanceMetric=similarity_metric.lower()
             )
-            logger.info(f"Created optimized S3 Vector index '{index_name}' with HNSW")
+            logger.info(f"Created S3 Vector index '{index_name}' with dimensions {dimensions}")
             return True
             
         except Exception as api_error:
@@ -367,18 +359,20 @@ def store_document_vectors(document_id: str, chunks_with_embeddings: List[Dict[s
         
         # Try to use S3 Vectors API first
         try:
-            # Prepare vectors for batch insertion
+            # Prepare vectors for batch insertion using correct S3 Vectors API
             vectors_to_insert = []
             for i, chunk in enumerate(chunks_with_embeddings):
                 vector_id = f"{document_id}_chunk_{i}"
                 
                 vector_entry = {
-                    'Id': vector_id,
-                    'Vector': chunk["embedding"],
-                    'Metadata': {
+                    'key': vector_id,
+                    'data': {
+                        'float32': chunk["embedding"]
+                    },
+                    'metadata': {
                         'document_id': document_id,
                         'chunk_index': str(i),
-                        'content': chunk["content"],
+                        'content': chunk["content"][:1000],  # Limit content size for metadata
                         'heading': chunk.get("heading", ""),
                         'chunk_type': chunk.get("chunk_type", "paragraph"),
                         'importance_score': str(chunk.get("importance_score", 1.0)),
@@ -387,11 +381,11 @@ def store_document_vectors(document_id: str, chunks_with_embeddings: List[Dict[s
                 }
                 vectors_to_insert.append(vector_entry)
             
-            # Use S3 put_vectors operation for batch insertion
+            # Use S3 Vectors put_vectors operation for batch insertion
             response = s3_client.put_vectors(
-                Bucket=vector_bucket,
-                VectorIndexName=index_name,
-                Vectors=vectors_to_insert
+                vectorBucketName=vector_bucket,
+                indexName=index_name,
+                vectors=vectors_to_insert
             )
             
             successful_chunks = len(vectors_to_insert)
@@ -1385,18 +1379,16 @@ def list_vector_indexes() -> List[Dict[str, Any]]:
         
         # Try native S3 Vectors API first
         try:
-            response = s3_vectors_client.list_vector_indexes()
+            response = s3_vectors_client.list_indexes(vectorBucketName=vector_bucket)
             
             indexes = []
-            for index in response.get('Indexes', []):
+            for index in response.get('indexes', []):
                 indexes.append({
-                    "name": index.get('IndexName'),
-                    "id": index.get('IndexId'),
-                    "status": index.get('Status'),
-                    "dimensions": index.get('VectorConfiguration', {}).get('Dimensions'),
-                    "similarity_metric": index.get('VectorConfiguration', {}).get('SimilarityMetric'),
-                    "created_at": index.get('CreatedAt'),
-                    "vector_count": index.get('VectorCount', 0)
+                    "name": index.get('indexName'),
+                    "arn": index.get('indexArn'),
+                    "bucket": index.get('vectorBucketName'),
+                    "created": index.get('creationTime'),
+                    "status": "ACTIVE"  # S3 Vectors indexes are active when listed
                 })
             
             logger.info(f"Found {len(indexes)} native S3 Vector indexes")
@@ -1510,19 +1502,21 @@ def get_vector_index_info(index_name: str) -> Optional[Dict[str, Any]]:
         
         # Try native S3 Vectors API first
         try:
-            response = s3_vectors_client.describe_vector_index(IndexName=index_name)
+            response = s3_vectors_client.get_index(
+                vectorBucketName=vector_bucket,
+                indexName=index_name
+            )
             
+            index_data = response.get('index', {})
             index_info = {
-                "name": response.get('IndexName'),
-                "id": response.get('IndexId'),
-                "status": response.get('Status'),
-                "dimensions": response.get('VectorConfiguration', {}).get('Dimensions'),
-                "similarity_metric": response.get('VectorConfiguration', {}).get('SimilarityMetric'),
-                "index_type": response.get('VectorConfiguration', {}).get('IndexType'),
-                "created_at": response.get('CreatedAt'),
-                "updated_at": response.get('UpdatedAt'),
-                "vector_count": response.get('VectorCount', 0),
-                "storage_size_bytes": response.get('StorageSizeBytes', 0),
+                "name": index_data.get('indexName'),
+                "arn": index_data.get('indexArn'),
+                "bucket": index_data.get('vectorBucketName'),
+                "status": "ACTIVE",
+                "data_type": index_data.get('dataType'),
+                "dimensions": index_data.get('dimension'),
+                "distance_metric": index_data.get('distanceMetric'),
+                "created": index_data.get('creationTime'),
                 "native_api": True
             }
             
