@@ -9,7 +9,7 @@ Before starting, make sure you have:
 1. **A computer** (Windows, Mac, or Linux)
 2. **An AWS account** (we'll help you set this up)
 3. **About 15 minutes** of your time
-4. **Your business documents** (PDFs, Word docs, etc.) that you want the chatbot to learn from
+4. **Your business documents** (PDF, DOCX, TXT, MD, HTML, CSV, JSON files) that you want the chatbot to learn from
 
 
 ## 🚀 Step-by-Step Deployment
@@ -21,7 +21,7 @@ Before starting, make sure you have:
    - Click "Create an AWS Account"
    - Follow the signup process (you'll need a credit card)
 
-2. **Set Up AWS CLI** (this lets your computer talk to AWS):
+2. **Set Up AWS CLI 2.27+** (this lets your computer talk to AWS):
    
    **For Windows:**
    ```cmd
@@ -83,7 +83,7 @@ Before starting, make sure you have:
 
 2. **Run deployment**:
    ```bash
-   ./deploy.sh
+   ./deploy.sh deploy
    ```
 
 3. **Follow the prompts**:
@@ -99,10 +99,13 @@ After deployment completes:
 mkdir documents
 
 # 2. Add your business documents
-# Copy your PDF, Word, text files to the documents folder
+# Copy your PDF, DOCX, TXT, MD, HTML, CSV, JSON files to the documents folder
 
-# 3. Upload to your chatbot
-python3 -m scripts.upload_documents --folder ./documents
+# 3. Install document processing tools
+pip install -r scripts/requirements.txt
+
+# 4. Process your documents
+python3 scripts/process_documents_locally.py --folder ./documents
 ```
 
 ### Step 4: Add to Your Website
@@ -131,9 +134,9 @@ Copy the provided integration code to your website, for example:
 
 ### If Deployment Fails
 
-1. **Try recovery**: `./deploy.sh --recover`
+1. **Check status**: `./deploy.sh status`
 2. **Check the log**: `cat deployment.log`
-3. **Start fresh**: `./deploy.sh rollback` then `./deploy.sh`
+3. **Start fresh**: `./deploy.sh rollback` then `./deploy.sh deploy`
 
 ### Common Issues
 
@@ -162,13 +165,13 @@ Copy the provided integration code to your website, for example:
 ### Adding More Documents
 ```bash
 # Add new files to the documents folder, then run:
-python3 -m scripts.upload_documents --folder ./documents
+python3 scripts/process_documents_locally.py --folder ./documents
 ```
 
 ### Updating Your Chatbot
 ```bash
 # If you make changes to configuration:
-./deploy.sh
+./deploy.sh deploy
 ```
 
 ### Viewing Usage and Costs

@@ -101,4 +101,4 @@ A: `pip install -r scripts/requirements.txt`
 A: Don't install anything manually. Run `./deploy.sh deploy` - it handles all dependencies.
 
 **Q: Which Python version?**
-A: Python 3.9+ required. Lambda uses Python 3.12.
+A: Python 3.12+ required. Lambda uses Python 3.12.

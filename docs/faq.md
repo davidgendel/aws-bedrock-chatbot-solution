@@ -6,42 +6,40 @@
 
 **A: You need these BEFORE running the deployment:**
 
-**Required (Manual Setup):**
-1. **AWS Account** with billing enabled (credit card required)
-2. **AWS CLI installed** and configured with `aws configure`
-3. **Python 3.12+** installed (3.12+ minimum)
-4. **Git** installed for cloning the repository
-5. **Nodejs** installed for aws-cdk (22.0+)
+**Required:**
+1. **AWS Account** with billing enabled
+2. **AWS CLI** installed and configured (`aws configure`)
+3. **Python 3.9+** installed
+4. **Git** installed
 
-**Optional (Enhanced Features):**
-5. **jq** installed (for atomic deployment with rollback)
-6. **scikit-learn** (auto-installed for vector clustering optimization)
+**Automatically Installed:**
+- AWS CDK (installed by deployment script)
+- Python packages (installed from requirements files)
+- Node.js dependencies (if needed)
 
-**Automatic (Handled by Script):**
-- npm (auto-installed if missing)
-- AWS CDK (auto-installed if missing)
-- Python packages (installed from requirements.txt)
-- CDK bootstrap (attempted automatically)
-
-### Q: What's the difference between standard and atomic deployment?
+### Q: What's the difference between one-command and manual deployment?
 
 **A: Two deployment options are available:**
 
-**Standard Deployment (`./deploy.sh`):**
-- ✅ Faster deployment (15-20 minutes)
-- ✅ Automatic dependency installation
-- ✅ Basic error recovery
-- ❌ No automatic rollback on failure
+**One-Command Deployment:**
+```bash
+curl -sSL https://raw.githubusercontent.com/your-github-username/aws-bedrock-chatbot-solution/main/install.sh | bash
+```
+- ✅ Fully automated (downloads code automatically)
+- ✅ Checks prerequisites automatically
+- ✅ Best for beginners
 
-**Atomic Deployment (`./deploy.sh`):**
-- ✅ Automatic rollback on any failure
-- ✅ Checkpoint-based recovery
-- ✅ Comprehensive error analysis
-- ✅ State management and progress tracking
-- ❌ Requires `jq` installed
-- ❌ Slightly longer deployment time
+**Manual Deployment:**
+```bash
+git clone https://github.com/your-github-username/aws-bedrock-chatbot-solution.git
+cd aws-bedrock-chatbot-solution
+./deploy.sh deploy
+```
+- ✅ Full control over the process
+- ✅ Can review code before deployment
+- ✅ Best for experienced users
 
-**Recommendation**: Use atomic deployment for production environments.
+Both methods include automatic rollback on failure and take the same amount of time.
 
 ### Q: How long does deployment actually take?
 

@@ -6,8 +6,8 @@
 
 ### Required
 - ✅ **AWS Account** with billing enabled
-- ✅ **AWS CLI** installed and configured (`aws configure`)
-- ✅ **Python 3.9+** installed
+- ✅ **AWS CLI 2.27+ ** installed and configured (`aws configure`)
+- ✅ **Python 3.12+** installed
 - ✅ **Git** installed
 
 ### AWS Permissions Required
@@ -54,18 +54,22 @@ cd aws-bedrock-chatbot-solution
 
 ### 1. Add Documents
 ```bash
-# Copy your documents to the documents folder
+# Create documents folder and add your files
+mkdir -p documents
 cp your-files.pdf ./documents/
+
+# Install document processing dependencies
+pip install -r scripts/requirements.txt
 
 # Process documents
 python3 scripts/process_documents_locally.py --folder ./documents
 ```
 
 ### 2. Get Integration Code
-After deployment, you'll receive HTML/JavaScript code to embed the chatbot on your website.
+After deployment, check the deployment output for HTML/JavaScript code to embed the chatbot on your website.
 
 ### 3. Test the Chatbot
-The deployment will provide a test URL to verify everything works.
+Use the API Gateway URL provided in the deployment output to test the chatbot.
 
 ## 🔧 Configuration
 
@@ -103,15 +107,11 @@ aws logs describe-log-groups --log-group-name-prefix "/aws/lambda/ChatbotRag"
 ## 💰 Cost Management
 
 ### Estimated Monthly Costs
-- **50 users/day**: ~$11
-- **250 users/day**: ~$40
-- **500 users/day**: ~$79
+- **50 users/day**: $11
+- **250 users/day**: $40
+- **500 users/day**: $79
 
-### Cost Optimization
-- Monitor usage in CloudWatch
-- Adjust Lambda concurrency settings
-- Review API Gateway throttling limits
-- Clean up old document vectors periodically
+*Includes AI processing, hosting, vector storage, security, and 20% caching savings*
 
 ## 🗑️ Uninstalling
 

@@ -2,3 +2,10 @@
 *.log
 **/.venv/**
 **/cdk.out/**
+
+# Lambda layers (built at deployment time)
+layers/
+lambda_function/
+
+# Keep layer specifications
+!lambda_layer/

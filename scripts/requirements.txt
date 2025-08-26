@@ -2,8 +2,8 @@
 # These dependencies are NOT needed in Lambda functions
 
 # Core AWS SDK (for scripts)
-boto3>=1.39.17
-botocore>=1.39.17
+boto3>=1.40.17
+botocore>=1.40.17
 
 # Document processing (PDF, Word, Images)
 PyPDF2>=3.0.1          # PDF text extraction

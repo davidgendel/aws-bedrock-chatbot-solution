@@ -1,103 +1,167 @@
 # RAG Chatbot User Guide
 
-This comprehensive guide provides detailed instructions for setting up, configuring, and using the enhanced RAG Chatbot solution with S3 Vectors and atomic deployment.
+This guide shows you how to set up and use your AI chatbot.
 
-## Table of Contents
+## 🚀 Quick Start
 
-1. [Getting Started](#getting-started)
-2. [Deployment Options](#deployment-options)
-3. [Configuration](#configuration)
-4. [Managing Your Knowledge Base](#managing-your-knowledge-base)
-5. [Customizing the Widget](#customizing-the-widget)
-6. [Performance Optimization](#performance-optimization)
-7. [Monitoring and Maintenance](#monitoring-and-maintenance)
-8. [Troubleshooting](#troubleshooting)
-9. [Advanced Features](#advanced-features)
+### What You Need
 
-## Getting Started
+1. **AWS Account** with billing enabled
+2. **AWS CLI** installed and configured (`aws configure`)
+3. **Python 3.9+** installed
+4. **Git** installed
 
-### Prerequisites
+### Deploy Your Chatbot
 
-Before deploying the RAG Chatbot solution, ensure you have:
-
-**Required:**
-1. **AWS Account**: An AWS account with appropriate permissions
-2. **AWS CLI**: Installed and configured with credentials (`aws configure`)
-3. **Python 3.12+**: Version 3.9 minimum, 3.12+ recommended
-4. **Git**: For cloning the repository
-
-**Optional (Enhanced Features):**
-5. **jq**: For atomic deployment with rollback capabilities
-6. **scikit-learn**: Auto-installed for vector clustering optimization
-
-### System Requirements
-
-- **Operating System**: Linux, macOS, or Windows with WSL
-- **Memory**: At least 4GB RAM (8GB recommended)
-- **Disk Space**: At least 2GB free space
-- **Network**: Stable internet connection
-
-### Quick Setup Verification
-
-```bash
-# Verify prerequisites
-python3 --version    # Should be 3.12+
-aws --version       # Should be 2.27.51+
-git --version       # Should be installed
-jq --version        # Optional, for atomic deployment
-node --version      # Should be 22.0+
-
-# Test AWS credentials
-aws sts get-caller-identity
-```
-
-## Deployment Options
-
-### Option 1: One-Command Deployment (Recommended for Beginners)
-
+**Option 1: One-Command Setup (Easiest)**
 ```bash
 curl -sSL https://raw.githubusercontent.com/your-github-username/aws-bedrock-chatbot-solution/main/install.sh | bash
 ```
 
-**Features:**
-- ✅ Fully automated setup
-- ✅ Dependency installation
-- ✅ Error recovery
-- ✅ Integration code generation
-
-**Time**: 15-20 minutes
-
-### Option 2: Atomic Deployment (Recommended for Production)
-
+**Option 2: Manual Setup**
 ```bash
 git clone https://github.com/your-github-username/aws-bedrock-chatbot-solution.git
 cd aws-bedrock-chatbot-solution
 ./deploy.sh deploy
 ```
 
-**Features:**
-- ✅ Automatic rollback on failure
-- ✅ Checkpoint-based recovery
-- ✅ Comprehensive error analysis
-- ✅ State management
-- ✅ Zero-downtime updates
+**Time needed**: 15-20 minutes
 
-**Time**: 18-25 minutes
+## 📚 Add Your Documents
 
-### Option 3: Standard Manual Deployment
-
+### Step 1: Prepare Your Documents
 ```bash
-git clone https://github.com/your-github-username/aws-bedrock-chatbot-solution.git
-cd aws-bedrock-chatbot-solution
-./deploy.sh
+# Create documents folder
+mkdir -p documents
+
+# Add your files (PDF, DOCX, TXT, MD, HTML, CSV, JSON)
+cp your-files.pdf ./documents/
 ```
 
-**Features:**
-- ✅ Full control over process
-- ✅ Basic error recovery
-- ✅ Faster deployment
+### Step 2: Process Documents
+```bash
+# Install processing tools
+pip install -r scripts/requirements.txt
 
-**Time**: 15-20 minutes
+# Process your documents
+python3 scripts/process_documents_locally.py --folder ./documents
+```
+
+**Supported formats**: PDF, DOCX, TXT, MD, HTML, CSV, JSON
+**File size limit**: 10MB per file
+
+## 🎨 Add Chatbot to Your Website
+
+After deployment, you'll get HTML code like this:
+
+```html
+<!-- Add this to your website -->
+<div id="chatbot-container"></div>
+<script src="https://your-cloudfront-url/widget.js"></script>
+<script>
+  SmallBizChatbot.init({
+    apiEndpoint: 'https://your-api-url',
+    apiKey: 'your-api-key'
+  });
+</script>
+```
+
+## ⚙️ Basic Configuration
+
+Edit `config.json` to customize:
+
+```json
+{
+  "widget": {
+    "defaultTheme": {
+      "primaryColor": "#4287f5",
+      "secondaryColor": "#f5f5f5"
+    }
+  },
+  "api": {
+    "throttling": {
+      "ratePerMinute": 10,
+      "ratePerHour": 100
+    }
+  }
+}
+```
+
+## 🔧 Maintenance
+
+### Weekly Tasks
+```bash
+# Optimize performance (recommended weekly)
+./vector_manager.sh optimize chatbot-document-vectors
+```
+
+### Check Status
+```bash
+# View deployment status
+./deploy.sh status
+
+# Check performance statistics
+./vector_manager.sh stats
+```
+
+### Add More Documents
+```bash
+# Add new documents anytime
+cp new-document.pdf ./documents/
+python3 scripts/process_documents_locally.py --file ./documents/new-document.pdf
+```
+
+## 💰 Monitor Costs
+
+### Check Current Usage
+```bash
+./vector_manager.sh stats
+```
+
+### Expected Monthly Costs
+- **50 users/day**: $11
+- **250 users/day**: $40  
+- **500 users/day**: $79
+
+## 🆘 Common Issues
+
+### Deployment Failed
+```bash
+./deploy.sh status    # Check what happened
+./deploy.sh rollback  # Remove failed deployment
+./deploy.sh deploy    # Try again
+```
+
+### Chatbot Not Responding
+1. Wait 10 minutes after deployment
+2. Check browser console for errors (F12 → Console)
+3. Verify integration code is correct
+4. Clear browser cache
+
+### High Costs
+```bash
+# Check usage patterns
+./vector_manager.sh stats
+
+# Optimize to reduce costs
+./vector_manager.sh optimize chatbot-document-vectors
+```
+
+## 🗑️ Remove Chatbot
+
+```bash
+# Complete removal
+./deploy.sh rollback
+
+# Clean up storage if needed
+./deploy.sh cleanup-s3
+```
+
+## 📞 Get Help
+
+1. Check `deployment.log` for error details
+2. See [troubleshooting guide](troubleshooting.md)
+3. Review [cost analysis](cost-analysis.md)
 
 ## Configuration
 
@@ -204,56 +268,18 @@ The system supports a wide range of document formats:
 
 #### Batch Upload (Recommended)
 
-```bash
-# Upload entire folder
-python3 -m scripts.upload_documents --folder ./documents
-
-# Upload specific file types only
-python3 -m scripts.upload_documents --folder ./docs --types pdf,docx,txt
-
-# Batch processing with custom size
-python3 -m scripts.upload_documents --folder ./docs --batch-size 5
-
-# Upload with progress tracking
-python3 -m scripts.upload_documents --folder ./docs --verbose
-```
-
-#### Single Document Upload
+### Document Processing Options
 
 ```bash
-# Upload single file
-python3 -m scripts.upload_documents --file document.pdf
+# Process entire folder
+python3 scripts/process_documents_locally.py --folder ./documents
 
-# Upload with custom metadata
-python3 -m scripts.upload_documents --file document.pdf --metadata '{"category": "manual", "version": "1.0"}'
+# Process single file
+python3 scripts/process_documents_locally.py --file ./documents/document.pdf
+
+# Delete processed document
+python3 scripts/process_documents_locally.py --delete "document-id"
 ```
-
-#### Programmatic Upload
-
-```python
-from scripts.upload_documents import upload_document, upload_folder
-
-# Upload single document
-result = upload_document("path/to/document.pdf")
-print(f"Document ID: {result['document_id']}")
-print(f"Status: {result['status']}")
-
-# Upload folder with options
-results = upload_folder(
-    folder_path="./documents",
-    file_types=["pdf", "docx", "txt"],
-    batch_size=5
-)
-print(f"Uploaded {len(results)} documents")
-```
-
-### Document Processing Status
-
-```bash
-# Check overall processing status
-python3 -c "
-from src.backend.document_processor import handler
-result = handler({'action': 'status'}, None)
 print('Processing status:', result['body'])
 "
 
@@ -291,37 +317,28 @@ print('Deletion result:', result)
 "
 
 # Clean up old documents (90+ days)
-python3 scripts/cleanup_vectors.py --days 90
+## 🎨 Add Chatbot to Your Website
 
-# Reprocess failed documents
-python3 -c "
-from src.backend.document_processor import reprocess_failed_documents
-result = reprocess_failed_documents()
-print('Reprocessing result:', result)
-"
-```
-
-## Customizing the Widget
-
-### Basic Integration
-
-Add this code to your website:
+After deployment, you'll get HTML code like this:
 
 ```html
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Your Website</title>
-</head>
-<body>
-    <!-- Your website content -->
-    
-    <!-- Chatbot Widget -->
-    <div id="chatbot-widget"></div>
-    <script src="https://your-cloudfront-domain/widget.js"></script>
-    <script>
-        ChatbotWidget.init({
-            containerId: 'chatbot-widget',
+<!-- Add this to your website -->
+<div id="chatbot-container"></div>
+<script src="https://your-cloudfront-url/widget.js"></script>
+<script>
+  SmallBizChatbot.init({
+    containerId: 'chatbot-container',
+    apiEndpoint: 'https://your-api-url',
+    apiKey: 'your-api-key',
+    theme: {
+      primaryColor: '#4287f5',
+      secondaryColor: '#f5f5f5'
+    },
+    placeholderText: 'Ask me anything...',
+    welcomeMessage: 'Hello! How can I help you today?'
+  });
+</script>
+```
             apiEndpoint: 'https://your-api-endpoint',
             title: 'Ask me anything!',
             placeholder: 'Type your question here...',
@@ -332,56 +349,7 @@ Add this code to your website:
 </html>
 ```
 
-### Advanced Customization
-
-```javascript
-ChatbotWidget.init({
-    // Basic Configuration
-    containerId: 'chatbot-widget',
-    apiEndpoint: 'https://your-api-endpoint',
-    
-    // Appearance
-    title: 'AI Assistant',
-    subtitle: 'Powered by your knowledge base',
-    placeholder: 'Ask me anything about our products...',
-    theme: 'light', // 'light', 'dark', or 'auto'
-    
-    // Behavior
-    autoOpen: false,
-    showTypingIndicator: true,
-    enableSuggestions: true,
-    maxMessages: 50,
-    
-    // Styling
-    primaryColor: '#007bff',
-    backgroundColor: '#ffffff',
-    textColor: '#333333',
-    borderRadius: '8px',
-    
-    // Features
-    enableFileUpload: false,
-    enableFeedback: true,
-    enableHistory: true,
-    
-    // Callbacks
-    onMessageSent: function(message) {
-        console.log('Message sent:', message);
-    },
-    onMessageReceived: function(response) {
-        console.log('Response received:', response);
-    },
-    onError: function(error) {
-        console.error('Chatbot error:', error);
-    }
-});
-```
-
-### Custom Themes
-
-```css
-/* Custom CSS for dark theme */
-.chatbot-widget.dark-theme {
-    --primary-color: #4a90e2;
+## ⚙️ Basic Configuration
     --background-color: #2c3e50;
     --text-color: #ecf0f1;
     --border-color: #34495e;
@@ -429,107 +397,7 @@ stats = get_cache_stats()
 print(f'Cache hit rate: {stats[\"hit_rate\"]:.2%}')
 print(f'Cache size: {stats[\"size\"]} items')
 print(f'Memory usage: {stats[\"memory_mb\"]:.1f} MB')
-"
-
-# Clear cache if needed
-python3 -c "
-from src.backend.cache_manager import clear_cache
-result = clear_cache()
-print('Cache cleared:', result)
-"
-
-# Warm up cache with common queries
-python3 -c "
-from src.backend.cache_manager import warm_cache
-queries = ['What is your return policy?', 'How do I contact support?']
-result = warm_cache(queries)
-print('Cache warmed up:', result)
-"
-```
-
-### Performance Monitoring
-
-```bash
-# Monitor Lambda performance
-aws logs filter-log-events \
-    --log-group-name /aws/lambda/ChatbotFunction \
-    --filter-pattern "REPORT" \
-    --limit 10
-
-# Check API Gateway metrics
-aws cloudwatch get-metric-statistics \
-    --namespace AWS/ApiGateway \
-    --metric-name Latency \
-    --dimensions Name=ApiName,Value=ChatbotApi \
-    --start-time $(date -d '1 hour ago' -u +%Y-%m-%dT%H:%M:%S) \
-    --end-time $(date -u +%Y-%m-%dT%H:%M:%S) \
-    --period 300 \
-    --statistics Average,Maximum
-
-# Benchmark vector search performance
-python3 -c "
-import time
-from src.backend.s3_vector_utils import query_similar_vectors
-import numpy as np
-
-# Generate test query
-query_embedding = np.random.rand(1536).tolist()
-
-# Benchmark search
-start = time.time()
-results = query_similar_vectors(query_embedding, limit=10)
-end = time.time()
-
-print(f'Search completed in {end-start:.3f}s')
-print(f'Found {len(results)} results')
-"
-```
-
-## Monitoring and Maintenance
-
-### Health Monitoring
-
-```bash
-# Overall system health check
-./deploy.sh status
-
-# API health check
-curl -X GET https://your-api-endpoint/health
-
-# Vector index health
-python3 scripts/manage_vector_indexes.py --health-check
-
-# Document processing health
-python3 -c "
-from src.backend.document_processor import handler
-result = handler({'action': 'health'}, None)
-print('Document processor health:', result['body'])
-"
-```
-
-### Log Analysis
-
-```bash
-# View recent Lambda logs
-aws logs tail /aws/lambda/ChatbotFunction --follow
-
-# Search for errors
-aws logs filter-log-events \
-    --log-group-name /aws/lambda/ChatbotFunction \
-    --filter-pattern "ERROR" \
-    --start-time $(date -d '1 hour ago' +%s)000
-
-# Search for performance issues
-aws logs filter-log-events \
-    --log-group-name /aws/lambda/ChatbotFunction \
-    --filter-pattern "[timestamp, requestId, level=WARN]" \
-    --start-time $(date -d '1 day ago' +%s)000
-```
-
-### Regular Maintenance Tasks
-
-```bash
-# Weekly maintenance script
+## 🔧 Maintenance
 #!/bin/bash
 
 echo "Starting weekly maintenance..."
@@ -629,107 +497,45 @@ print('Memory after:', psutil.Process().memory_info().rss / 1024 / 1024, 'MB')
 gc.collect()
 print('Memory after GC:', psutil.Process().memory_info().rss / 1024 / 1024, 'MB')
 "
+## 🆘 Common Issues
+
+### Deployment Failed
+```bash
+./deploy.sh status    # Check what happened
+./deploy.sh rollback  # Remove failed deployment
+./deploy.sh deploy    # Try again
 ```
 
-#### Issue: Document Processing Failures
+### Chatbot Not Responding
+1. Wait 10 minutes after deployment
+2. Check browser console for errors (F12 → Console)
+3. Verify integration code is correct
+4. Clear browser cache
+
+### High Costs
+```bash
+# Check usage patterns
+./vector_manager.sh stats
+
+# Optimize to reduce costs
+./vector_manager.sh optimize chatbot-document-vectors
+```
+
+## 🗑️ Remove Chatbot
 
 ```bash
-# Check processing status
-python3 -c "
-from src.backend.document_processor import handler
-result = handler({'action': 'status'}, None)
-print('Processing status:', result['body'])
-"
+# Complete removal
+./deploy.sh rollback
 
-# Reprocess failed documents
-python3 -c "
-from src.backend.document_processor import reprocess_failed_documents
-result = reprocess_failed_documents()
-print('Reprocessing result:', result)
-"
-
-# Check supported file types
-python3 -c "
-from src.backend.document_processor import handler
-result = handler({'action': 'supported_types'}, None)
-print('Supported types:', result['body']['supported_file_types'])
-"
+# Clean up storage if needed
+./deploy.sh cleanup-s3
 ```
 
-### Getting Help
+## 📞 Get Help
 
-1. **Check Documentation**: Review [FAQ](faq.md) and [Troubleshooting Guide](troubleshooting.md)
-2. **Run Diagnostics**: Use built-in diagnostic tools
-3. **Check Logs**: Review deployment and runtime logs
-4. **Community Support**: GitHub Issues for community help
-
-## Advanced Features
-
-### Custom AI Models
-
-```python
-# Configure custom models in config.json
-{
-    "ai_models": {
-        "chat_model": "amazon.nova-pro-v1:0",  # More powerful model
-        "embedding_model": "amazon.titan-embed-text-v2",  # Latest embedding model
-        "enable_guardrails": true,
-        "temperature": 0.7,
-        "max_tokens": 2048
-    }
-}
-```
-
-### API Integration
-
-```python
-import requests
-
-# Direct API usage
-def query_chatbot(message, session_id=None):
-    response = requests.post(
-        'https://your-api-endpoint/chat',
-        json={
-            'message': message,
-            'session_id': session_id or 'default',
-            'stream': False
-        },
-        headers={'Content-Type': 'application/json'}
-    )
-    return response.json()
-
-# Example usage
-result = query_chatbot("What is your return policy?")
-print(result['response'])
-```
-
-### Webhook Integration
-
-```python
-# Set up webhook for document processing notifications
-def setup_webhook():
-    webhook_config = {
-        'url': 'https://your-domain.com/webhook',
-        'events': ['document.processed', 'document.failed'],
-        'secret': 'your-webhook-secret'
-    }
-    
-    # Configure webhook in your system
-    # This would be implemented based on your specific needs
-```
-
----
-
-## Summary
-
-This user guide covers all aspects of the enhanced RAG Chatbot solution. Key features include:
-
-- **S3 Vectors**: Native cloud vector storage with HNSW indexing
-- **Atomic Deployment**: Rollback-capable deployment system
-- **Performance Optimization**: Multiple optimization strategies
-- **Comprehensive Monitoring**: Health checks and performance metrics
-- **Flexible Configuration**: Multiple configuration methods
-- **Advanced Customization**: Widget themes and API integration
+1. Check `deployment.log` for error details
+2. See [troubleshooting guide](troubleshooting.md)
+3. Review [cost analysis](cost-analysis.md)
 
 For additional help, refer to the [FAQ](faq.md), [Troubleshooting Guide](troubleshooting.md), or check the project's GitHub repository.
 

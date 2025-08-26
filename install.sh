@@ -125,7 +125,7 @@ echo -e "${GREEN}╚════════════════════
 
 echo -e "\n${CYAN}📋 What's next:${NC}"
 echo -e "   1. Add your documents to the 'documents' folder"
-echo -e "   2. Run: python3 -m scripts.upload_documents --folder ./documents"
+echo -e "   2. Run: python3 scripts/process_documents_locally.py --folder ./documents"
 echo -e "   3. Copy the widget code to your website"
 
 echo -e "\n${CYAN}📚 Documentation:${NC}"

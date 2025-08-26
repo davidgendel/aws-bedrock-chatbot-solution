@@ -1,6 +1,6 @@
 # Core AWS SDK
-boto3>=1.34.0
-botocore>=1.34.0
+boto3>=1.40.17
+botocore>=1.40.17
 
 # Vector calculations (full performance)
 numpy>=1.26.0

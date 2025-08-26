@@ -7,10 +7,10 @@ This guide provides solutions for common issues you might encounter during deplo
 ### Deployment Failed Completely
 ```bash
 # Try these commands in order:
-./deploy.sh --recover         # Resume from last successful step
-./deploy.sh rollback   # Rollback atomic deployment
-./deploy.sh --clean          # Clean up and start fresh
-./deploy.sh                  # Run full deployment again
+./deploy.sh status         # Check current deployment status
+./deploy.sh rollback       # Rollback deployment
+./deploy.sh cleanup-s3     # Empty S3 buckets if needed
+./deploy.sh deploy         # Run full deployment again
 ```
 
 ### Chatbot Not Working on Website
@@ -178,122 +178,86 @@ This guide provides solutions for common issues you might encounter during deplo
 ### Vector Storage Problems
 
 **Issue**: "S3 Vectors index not found"
-- **Cause**: Vector index not created or misconfigured
+- **Cause**: Vector index not created during deployment
 - **Solution**:
   ```bash
-  # Check if index exists
-  python3 -c "
-  from src.backend.s3_vector_utils import list_vector_indexes
-  print(list_vector_indexes())
-  "
+  # Check deployment status
+  ./deploy.sh status
   
-  # Create index manually
-  python3 -c "
-  from src.backend.s3_vector_utils import create_vector_index
-  create_vector_index('chatbot-index')
-  "
+  # If deployment completed, check vector indexes
+  ./vector_manager.sh list
+  
+  # If no indexes found, redeploy
+  ./deploy.sh rollback
+  ./deploy.sh deploy
   ```
 
 **Issue**: "Vector similarity search slow"
-- **Cause**: Index not optimized or too many vectors
+- **Cause**: Index needs optimization
 - **Solution**:
   ```bash
-  # Optimize vector index
-  python3 scripts/manage_vector_indexes.py --optimize
+  # Optimize vector index (run weekly)
+  ./vector_manager.sh optimize chatbot-document-vectors
   
-  # Check optimization status
-  python3 scripts/manage_vector_indexes.py --status
-  
-  # Clean up old vectors
-  python3 scripts/cleanup_vectors.py --days 90
+  # Check performance statistics
+  ./vector_manager.sh stats
   ```
-
 **Issue**: "Document processing failed"
-- **Cause**: Unsupported format or processing errors
+- **Cause**: Unsupported file format or file too large
 - **Solution**:
   ```bash
-  # Check supported formats
-  python3 -c "
-  from src.backend.document_processor import handler
-  result = handler({'action': 'status'}, None)
-  print('Supported formats:', result['body']['supported_file_types'])
-  "
+  # Check supported formats: PDF, DOCX, TXT, MD, HTML, CSV, JSON
+  # Maximum file size: 10MB per document
   
-  # Process document manually
-  python3 -c "
-  from src.backend.document_processor import process_document
-  result = process_document('your-bucket', 'document.pdf')
-  print(result)
-  "
+  # Process documents manually
+  python3 scripts/process_documents_locally.py --file your-document.pdf
   ```
 
 ### Performance Issues
 
 **Issue**: "Chatbot responses are slow"
-- **Cause**: Cold starts, unoptimized vectors, or cache misses
+- **Cause**: System needs optimization
 - **Solution**:
   ```bash
-  # Warm up Lambda functions
-  curl -X POST https://your-api-endpoint/chat \
-    -H "Content-Type: application/json" \
-    -d '{"message": "test", "session_id": "warmup"}'
+  # Optimize vector index (recommended weekly)
+  ./vector_manager.sh optimize chatbot-document-vectors
   
-  # Check cache performance
-  python3 -c "
-  from src.backend.cache_manager import get_cache_stats
-  print(get_cache_stats())
-  "
+  # Check performance statistics
+  ./vector_manager.sh stats
   
-  # Optimize vector index
-  python3 scripts/manage_vector_indexes.py --optimize
+  # Wait 5-10 minutes after deployment for system to warm up
   ```
 
-**Issue**: "High memory usage in Lambda"
-- **Cause**: Large vector operations or memory leaks
+**Issue**: "High AWS costs"
+- **Cause**: Unusual usage or inefficient operations
 - **Solution**:
   ```bash
-  # Check Lambda metrics
-  aws cloudwatch get-metric-statistics \
-    --namespace AWS/Lambda \
-    --metric-name MemoryUtilization \
-    --dimensions Name=FunctionName,Value=ChatbotFunction \
-    --start-time $(date -d '1 hour ago' -u +%Y-%m-%dT%H:%M:%S) \
-    --end-time $(date -u +%Y-%m-%dT%H:%M:%S) \
-    --period 300 \
-    --statistics Average,Maximum
+  # Check cost statistics
+  ./vector_manager.sh stats
   
-  # Enable async processing to reduce memory usage
-  export USE_ASYNC_PROCESSING=true
+  # Optimize vector index to reduce costs
+  ./vector_manager.sh optimize chatbot-document-vectors
+  
+  # Review AWS CloudWatch for usage patterns
   ```
 
 ### API Gateway Issues
 
 **Issue**: "API Gateway timeout"
-- **Cause**: Lambda function taking too long
+- **Cause**: Large documents or complex queries
 - **Solution**:
-  ```bash
-  # Check Lambda duration
-  aws logs filter-log-events \
-    --log-group-name /aws/lambda/ChatbotFunction \
-    --filter-pattern "REPORT" \
-    --limit 10
-  
-  # Enable streaming responses
-  # Check widget.js for streaming configuration
-  
-  # Optimize document processing
-  python3 scripts/manage_vector_indexes.py --optimize
-  ```
+  - Break large documents into smaller files (under 5MB each)
+  - Use simpler, more direct questions
+  - Wait for system to warm up after deployment
 
 **Issue**: "CORS errors in browser"
-- **Cause**: CORS not properly configured
+- **Cause**: Browser security restrictions
 - **Solution**:
   ```bash
-  # Check API Gateway CORS settings
-  aws apigateway get-resource --rest-api-id YOUR_API_ID --resource-id YOUR_RESOURCE_ID
-  
-  # Redeploy to fix CORS
-  ./deploy.sh
+  # Redeploy to fix CORS configuration
+  ./deploy.sh rollback
+  ./deploy.sh deploy
+  ```
   ```
 
 ## 🔧 Advanced Troubleshooting
@@ -621,11 +585,7 @@ python3 scripts/recovery_manager.py --analyze --suggest
   "
   
   # Process document manually
-  python3 -c "
-  from src.backend.document_processor import process_document
-  result = process_document('your-bucket', 'document.pdf')
-  print(result)
-  "
+
   ```
 
 ## 🤖 API and Lambda Issues
@@ -693,7 +653,7 @@ python3 scripts/recovery_manager.py --analyze --suggest
 **Issue**: "Document upload fails"
 - **Cause**: File format not supported or file too large
 - **Solution**:
-  1. Check supported formats: PDF, TXT, DOCX, MD, HTML, PNG, JPG
+  1. Check supported formats: PDF, DOCX, TXT, MD, HTML, CSV, JSON
   2. Reduce file size (max 10MB per file)
   3. Convert to supported format
   4. Check S3 bucket permissions

@@ -1,47 +1,25 @@
 # 🔐 AWS Request Signing Guide
 
-This guide covers the AWS request signing implementation in the RAG chatbot solution, providing enhanced security for all AWS API calls.
+This guide explains the security features built into the RAG chatbot solution.
 
-## 🚀 Overview
+## 🚀 What is Request Signing?
 
-The chatbot now includes comprehensive AWS request signing using SigV4 (Signature Version 4) for all AWS API calls. This provides:
+The chatbot automatically signs all AWS API requests for enhanced security. This means:
 
 - **Enhanced Security**: All requests are cryptographically signed
-- **Authentication**: Verifies request authenticity and integrity
-- **Non-repudiation**: Prevents request tampering and replay attacks
-- **Compliance**: Meets enterprise security requirements
-
-## 🏗️ Architecture
-
-### Core Components
-
-1. **AWSClientFactory**: Centralized client creation with signing support
-2. **RequestSigner**: SigV4 signature generation and validation
-3. **SigningConfig**: Configuration management for signing parameters
-
-### Request Flow
-
-```
-Client Request → AWSClientFactory → RequestSigner → Signed Request → AWS API
-```
+- **Authentication**: Verifies request authenticity and integrity  
+- **Protection**: Prevents request tampering and unauthorized access
 
 ## ⚙️ Configuration
 
-### Basic Configuration
-
-Edit `config.json` to configure request signing:
+Request signing is enabled by default. To modify settings, edit `config.json`:
 
 ```json
 {
   "aws": {
     "requestSigning": {
       "enabled": true,
-      "signatureVersion": "v4",
-      "includeHeaders": ["host", "x-amz-date", "authorization"],
-      "excludeServices": [],
-      "cacheTTL": 300,
       "requireHttps": true,
-      "validateSignatures": true,
       "logSigningEvents": false
     }
   }
@@ -53,50 +31,32 @@ Edit `config.json` to configure request signing:
 | Option | Description | Default |
 |--------|-------------|---------|
 | `enabled` | Enable/disable request signing | `true` |
-| `signatureVersion` | AWS signature version | `"v4"` |
-| `includeHeaders` | Headers to include in signature | `["host", "x-amz-date", "authorization"]` |
-| `excludeServices` | Services to exclude from signing | `[]` |
-| `cacheTTL` | Signature cache TTL (seconds) | `300` |
 | `requireHttps` | Require HTTPS for signed requests | `true` |
-| `validateSignatures` | Validate incoming signatures | `true` |
 | `logSigningEvents` | Log signing events for debugging | `false` |
 
 ## 🔧 Usage
 
-### Creating Signed Clients
+Request signing works automatically - no additional setup required. The system handles all signing operations behind the scenes.
 
-```python
-from aws_client_factory import AWSClientFactory
+## 🛠️ Troubleshooting
 
-# Create signed client (default)
-s3_client = AWSClientFactory.create_client('s3', enable_signing=True)
+### Common Issues
 
-# Create unsigned client (fallback)
-s3_client = AWSClientFactory.create_client('s3', enable_signing=False)
+**Signing errors in logs**: This is normal during development. The system will retry automatically.
 
-# Use convenience functions
-from aws_utils import get_s3_client
-s3_client = get_s3_client(enable_signing=True)
-```
+**HTTPS required errors**: Ensure your API Gateway uses HTTPS endpoints (default configuration).
 
-### Runtime Configuration
+**Permission errors**: Verify your AWS credentials have the necessary permissions for the services being used.
 
-```python
-from aws_client_factory import AWSClientFactory
+## 🛠️ Troubleshooting
 
-# Enable signing at runtime
-AWSClientFactory.configure_signing(enabled=True)
+### Common Issues
 
-# Disable signing for testing
-AWSClientFactory.configure_signing(enabled=False)
+**Signing errors in logs**: This is normal during development. The system will retry automatically.
 
-# Update specific configuration
-AWSClientFactory.configure_signing(
-    enabled=True,
-    signature_version='v4',
-    log_signing_events=True
-)
-```
+**HTTPS required errors**: Ensure your API Gateway uses HTTPS endpoints (default configuration).
+
+**Permission errors**: Verify your AWS credentials have the necessary permissions for the services being used.
 
 ### Manual Request Signing
 

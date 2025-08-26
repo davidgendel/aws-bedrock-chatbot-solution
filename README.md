@@ -2,7 +2,7 @@
 
 > **⚠️ EXAMPLE PROJECT**: This demonstrates how to build a RAG chatbot using AWS services. Costs will vary based on usage. No warranty provided.
 
-Deploy an AI chatbot that learns from your documents in ~15 minutes. **Starting at $11/month**.
+Deploy an AI chatbot that learns from your documents in 15-20 minutes. **Starting at $11/month**.
 
 ## 🚀 Quick Start
 
@@ -26,16 +26,16 @@ cd aws-bedrock-chatbot-solution
 - **One-command vector optimization** with built-in performance monitoring
 - **Real-time streaming** via WebSocket
 - **Content moderation** with Bedrock Guardrails
-- **Multi-format documents** (PDF, TXT, images with OCR)
+- **Multi-format documents** (PDF, DOCX, TXT, MD, HTML, CSV, JSON)
 - **Enterprise security** (WAF, rate limiting, PII detection, signed requests)
 - **Auto-scaling** serverless architecture
 - **Multi-layer caching** for 20% cost savings
 
 ## 📋 Prerequisites
 
-- AWS Account with billing enabled
-- AWS CLI configured (`aws configure`)
-- Python 3.9+ installed
+- AWS Account with appropriate permissions
+- AWS CLI 2.27+ configured (`aws configure`)
+- Python 3.12+ installed
 - Git installed
 
 ## 🛠️ Commands

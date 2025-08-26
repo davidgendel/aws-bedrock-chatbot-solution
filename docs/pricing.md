@@ -1,53 +1,43 @@
 # Pricing Information
 
-## Monthly Cost Estimates
+## Monthly Costs
 
-| Business Size | Daily Users | Monthly Cost | Cost per User |
-|---------------|-------------|--------------|---------------|
-| **Small** | 50 | **$11.45** | $0.23 |
-| **Medium** | 250 | **$40.33** | $0.16 |
-| **Large** | 500 | **$78.91** | $0.16 |
+| Usage Level | Daily Users | Monthly Cost |
+|-------------|-------------|--------------|
+| **Small** | 50 users | $11 |
+| **Medium** | 250 users | $40 |
+| **Large** | 500 users | $79 |
 
-*Pricing based on 15 interactions per user per day with 400 tokens per interaction. Includes 20% cost savings from multi-layer caching optimization. Calculations use latest AWS pricing as of January 2025.*
+*Includes all AWS services needed to run your chatbot*
 
 ## What's Included
 
-Your monthly cost includes everything needed to run a production RAG chatbot:
+- **AI Processing**: Amazon Nova Lite for chat responses
+- **Document Search**: Vector-based document retrieval
+- **Security**: Web application firewall and content filtering
+- **Global Delivery**: Fast loading worldwide
+- **Monitoring**: Usage tracking and performance monitoring
+- **Storage**: Secure document and data storage
 
-- ✅ **AI Processing** - Amazon Nova Lite model inference with streaming
-- ✅ **Document Understanding** - Amazon Titan embeddings for RAG retrieval
-- ✅ **Content Safety** - Bedrock Guardrails for content filtering
-- ✅ **Serverless Hosting** - AWS Lambda with Graviton3 processors
-- ✅ **Vector Storage** - Amazon S3 Vectors for native vector operations
-- ✅ **Real-time Chat** - API Gateway REST and WebSocket APIs
-- ✅ **Security** - AWS WAF with DDoS protection and rate limiting
-- ✅ **Global CDN** - CloudFront for fast widget delivery
-- ✅ **Monitoring** - CloudWatch logs, metrics, and dashboards
-- ✅ **Multi-layer Caching** - Response, context, and embedding caching
+## Cost Factors
 
-## Cost Breakdown by Service
+- **Usage-based**: You only pay for actual usage
+- **Optimized**: Built-in caching reduces costs by 20%
+- **Scalable**: Costs scale with your user base
+- **Predictable**: No surprise charges or hidden fees
 
-### Small Organization - 50 Users ($11.45/month)
-- **Amazon Bedrock**: $5.40 (47%) - AI model inference and embeddings
-- **AWS Lambda**: $2.40 (21%) - Serverless compute with caching
-- **API Gateway**: $1.35 (12%) - REST and WebSocket APIs
-- **CloudFront**: $0.50 (4%) - Global content delivery
-- **CloudWatch**: $0.50 (4%) - Logging and monitoring
-- **S3 Storage**: $0.25 (2%) - Document and frontend storage
-- **AWS WAF**: $1.00 (9%) - Security and DDoS protection
-- **S3 Vectors**: $0.05 (0.4%) - Native vector storage and search
+## Cost Management
 
-### Medium Organization - 250 Users ($40.33/month)
-- **Amazon Bedrock**: $21.60 (54%) - AI model inference and embeddings
-- **AWS Lambda**: $9.60 (24%) - Serverless compute with caching
-- **API Gateway**: $5.40 (13%) - REST and WebSocket APIs
-- **CloudFront**: $1.25 (3%) - Global content delivery
-- **CloudWatch**: $1.00 (2%) - Logging and monitoring
-- **S3 Storage**: $0.25 (1%) - Document and frontend storage
-- **AWS WAF**: $1.00 (2%) - Security and DDoS protection
-- **S3 Vectors**: $0.23 (1%) - Native vector storage and search
+Monitor and control costs:
+```bash
+# Check current usage
+./vector_manager.sh stats
 
-### Large Organization - 500 Users ($78.91/month)
+# Optimize to reduce costs
+./vector_manager.sh optimize chatbot-document-vectors
+```
+
+For detailed cost breakdown, see [cost-analysis.md](cost-analysis.md).
 - **Amazon Bedrock**: $43.20 (55%) - AI model inference and embeddings
 - **AWS Lambda**: $19.20 (24%) - Serverless compute with caching
 - **API Gateway**: $10.80 (14%) - REST and WebSocket APIs

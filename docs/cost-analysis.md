@@ -1,53 +1,83 @@
-# RAG Chatbot - Comprehensive Cost Analysis
+# RAG Chatbot - Cost Analysis
 
-This document provides a detailed cost analysis for the RAG Chatbot solution with S3 Vectors, multi-layer caching, and performance optimizations.
+This document explains the costs for running the RAG Chatbot solution.
 
-## 💰 Cost Overview
+## 💰 Monthly Costs
 
-### Monthly Cost Breakdown by Usage Scale
+### Cost by Usage Level
 
-| Component | Small (50 users/day) | Medium (250 users/day) | Large (500 users/day) |
-|-----------|---------------------|------------------------|------------------------|
-| **AWS Lambda** | $2.40 | $9.60 | $19.20 |
-| **S3 Vectors** | $0.05 | $0.23 | $0.46 |
-| **API Gateway** | $1.35 | $5.40 | $10.80 |
-| **CloudFront** | $0.50 | $1.25 | $2.50 |
-| **Amazon Bedrock** | $5.40 | $21.60 | $43.20 |
-| **S3 Storage** | $0.25 | $0.25 | $0.25 |
-| **CloudWatch** | $0.50 | $1.00 | $1.50 |
-| **WAF** | $1.00 | $1.00 | $1.00 |
-| **Total** | **$11.45** | **$40.33** | **$78.91** |
+| Usage Level | Daily Users | Monthly Cost |
+|-------------|-------------|--------------|
+| **Small** | 50 users | $11 |
+| **Medium** | 250 users | $40 |
+| **Large** | 500 users | $79 |
 
-### Cost Per User
+*Costs include all AWS services: AI processing, hosting, storage, security, and global delivery*
 
-| Business Size | Monthly Cost | Daily Users | Cost per User |
-|---------------|--------------|-------------|---------------|
-| **Small** | $11.45 | 50 | $0.23 |
-| **Medium** | $40.33 | 250 | $0.16 |
-| **Large** | $78.91 | 500 | $0.16 |
+### What's Included
+
+- **AI Processing**: Amazon Nova Lite for chat responses
+- **Document Storage**: Secure cloud storage for your documents
+- **Vector Search**: Fast document search capabilities
+- **Security**: Web application firewall and content filtering
+- **Global Delivery**: Fast loading worldwide via CloudFront
+- **Monitoring**: Usage tracking and performance monitoring
 
 ### Usage Assumptions
 
-- **Daily Users**: 50, 250, or 500 users per day
-- **Daily Interactions**: 15 interactions per user per day
-- **Average Tokens**: 400 tokens per interaction
-- **Document Storage**: 20 documents, 100MB total
-- **Cache Hit Rate**: 20% (conservative estimate with caching benefits)
+- Each user asks 15 questions per day
+- Average response length: 400 words
+- Document storage: 20 documents (100MB total)
+- Includes 20% cost savings from built-in caching
 
-## 📊 Detailed Component Analysis
+## 📊 Cost Breakdown
 
-### 1. AWS Lambda (Graviton3)
+### Main Cost Components
 
-**What it does**: Runs the chatbot logic, document processing, and vector operations
+1. **AI Processing (50% of cost)**: Amazon Bedrock for generating responses
+2. **Hosting (25% of cost)**: AWS Lambda for running the chatbot
+3. **API & Delivery (15% of cost)**: API Gateway and CloudFront
+4. **Storage & Security (10% of cost)**: S3, WAF, and monitoring
 
-**Pricing Model**: 
-- $0.0000166667 per GB-second (Graviton3 - 20% cheaper than x86)
-- $0.20 per 1M requests
+### Cost Optimization Features
 
-**Cost Calculation**:
+- **Multi-layer caching**: Reduces repeat processing by 20%
+- **ARM processors**: 20% cheaper than standard processors
+- **Efficient vector storage**: Optimized document search
+- **Smart rate limiting**: Prevents unexpected cost spikes
+
+## 💡 Cost Management Tips
+
+### Monitor Your Usage
+```bash
+# Check current usage and costs
+./vector_manager.sh stats
 ```
-Small (50 users): 750 requests/day × 30 days = 22,500 requests/month
-Medium (250 users): 3,750 requests/day × 30 days = 112,500 requests/month  
+
+### Optimize Performance
+```bash
+# Run weekly to maintain efficiency
+./vector_manager.sh optimize chatbot-document-vectors
+```
+
+### Control Costs
+- Set up AWS billing alerts in your AWS console
+- Review usage monthly in AWS Cost Explorer
+- Remove unused documents to reduce storage costs
+- Adjust rate limits in `config.json` if needed
+
+## 🔍 Understanding Your Bill
+
+Your AWS bill will show charges for:
+- **Lambda**: Chatbot processing
+- **Bedrock**: AI model usage
+- **API Gateway**: API requests
+- **S3**: Document and vector storage
+- **CloudFront**: Global content delivery
+- **WAF**: Security protection
+- **CloudWatch**: Monitoring and logs
+
+All costs scale with usage - you only pay for what you use.  
 Large (500 users): 7,500 requests/day × 30 days = 225,000 requests/month
 
 Average execution time: 1.3 seconds (with 20% caching optimization)
@@ -317,17 +347,19 @@ Large: $78.91/month
 
 ## 📊 Real-World Usage Scenarios
 
+## 📈 Cost Examples
+
 ### Scenario 1: Small Organization (50 users/day)
-- **Monthly Cost**: $11.45
-- **Cost per interaction**: $0.017
+- **Monthly Cost**: $11
+- **Cost per interaction**: $0.02
 
 ### Scenario 2: Medium Organization (250 users/day)  
-- **Monthly Cost**: $40.33
-- **Cost per interaction**: $0.012
+- **Monthly Cost**: $40
+- **Cost per interaction**: $0.01
 
 ### Scenario 3: Large Organization (500 users/day)
-- **Monthly Cost**: $78.91 
-- **Cost per interaction**: $0.011 
+- **Monthly Cost**: $79 
+- **Cost per interaction**: $0.01 
 
 
 ## 🎯 Cost Monitoring & Alerts

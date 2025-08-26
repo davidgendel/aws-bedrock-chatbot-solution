@@ -540,13 +540,25 @@ def handler(event, context):
 
     def _create_lambda_layers(self) -> Dict[str, lambda_.LayerVersion]:
         """Create Lambda layers for heavy dependencies."""
-        # Create boto3 layer with latest version
+        # Create boto3 layer dynamically (built at deployment time)
         boto3_layer = lambda_.LayerVersion(
             self, "LatestBoto3Layer",
-            code=lambda_.Code.from_asset("layers/boto3-layer"),
+            code=lambda_.Code.from_asset(
+                ".",  # Use current directory
+                bundling=cdk.BundlingOptions(
+                    image=lambda_.Runtime.PYTHON_3_12.bundling_image,
+                    command=[
+                        "bash", "-c",
+                        "pip install 'boto3>=1.40.17' 'botocore>=1.40.17' -t /asset-output/python/ && "
+                        "find /asset-output -name '*.pyc' -delete && "
+                        "find /asset-output -name '__pycache__' -type d -exec rm -rf {} + || true"
+                    ],
+                    user="root",
+                )
+            ),
             compatible_runtimes=[lambda_.Runtime.PYTHON_3_12],
             compatible_architectures=[lambda_.Architecture.ARM_64],
-            description="Latest boto3 1.39.17+ with S3 Vectors support"
+            description="Latest boto3 with S3 Vectors support (built at deployment)"
         )
         
         # Create dependencies layer (without boto3 - now handled by boto3_layer)
@@ -567,7 +579,7 @@ def handler(event, context):
             ),
             compatible_runtimes=[lambda_.Runtime.PYTHON_3_12],
             compatible_architectures=[lambda_.Architecture.ARM_64],
-            description="Optimized dependencies layer for chatbot (numpy, structlog, cachetools) - 52% smaller",
+            description="Optimized dependencies layer for chatbot (numpy, structlog, cachetools)",
         )
         
         return {
@@ -586,7 +598,7 @@ def handler(event, context):
             runtime=lambda_.Runtime.PYTHON_3_12,
             architecture=lambda_.Architecture.ARM_64,
             handler="lambda_handler.handler",
-            code=lambda_.Code.from_asset(str(Path(__file__).parent.parent.parent / "lambda_function")),
+            code=lambda_.Code.from_asset(str(Path(__file__).parent.parent / "backend")),
             layers=[layers["boto3"], layers["dependencies"]],  # boto3 layer first for proper precedence
             timeout=cdk.Duration.seconds(30),
             memory_size=512,  # Increased for better performance with layers
