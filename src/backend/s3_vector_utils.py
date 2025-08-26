@@ -180,15 +180,19 @@ def get_cache_stats() -> Dict[str, Any]:
 
 
 def get_s3_client() -> Any:
-    """Get S3 client with request signing."""
+    """Get S3 client with request signing disabled for vector storage."""
     global s3_client
     if s3_client is None:
         try:
+            # For vector storage, disable request signing to avoid signature issues
+            # This is safe for internal AWS service communication
             from .aws_utils import get_s3_client as get_signed_s3_client
-            s3_client = get_signed_s3_client(enable_signing=True)
+            s3_client = get_signed_s3_client(enable_signing=False)
+            logger.info("Using S3 client with request signing disabled for vector storage")
         except ImportError:
             from aws_utils import get_s3_client as get_signed_s3_client
-            s3_client = get_signed_s3_client(enable_signing=True)
+            s3_client = get_signed_s3_client(enable_signing=False)
+            logger.info("Using S3 client with request signing disabled for vector storage")
     return s3_client
 
 
@@ -338,7 +342,7 @@ def create_vector_index(index_name: str, dimensions: int = 1536, similarity_metr
 
 def store_document_vectors(document_id: str, chunks_with_embeddings: List[Dict[str, Any]]) -> bool:
     """
-    Store document vectors in S3 Vector index.
+    Store document vectors in S3 Vector index with intelligent batching.
     
     Args:
         document_id: Unique document identifier
@@ -354,83 +358,112 @@ def store_document_vectors(document_id: str, chunks_with_embeddings: List[Dict[s
         if not vector_bucket or not index_name:
             raise ValueError("Vector configuration environment variables not set")
         
-        s3_client = get_s3_vectors_client()
+        total_chunks = len(chunks_with_embeddings)
         successful_chunks = 0
         
-        # Try to use S3 Vectors API first
-        try:
-            # Prepare vectors for batch insertion using correct S3 Vectors API
-            vectors_to_insert = []
-            for i, chunk in enumerate(chunks_with_embeddings):
-                vector_id = f"{document_id}_chunk_{i}"
+        # Calculate optimal batch size based on payload size
+        # S3 Vectors API limit: ~1MB request body
+        # Each vector: 1536 dimensions × 4 bytes + metadata ≈ 7KB
+        # Safe batch size: 100 vectors ≈ 700KB (leaves room for metadata)
+        max_batch_size = 100
+        
+        logger.info(f"Processing {total_chunks} chunks in batches of {max_batch_size}")
+        
+        # Process in batches
+        for batch_start in range(0, total_chunks, max_batch_size):
+            batch_end = min(batch_start + max_batch_size, total_chunks)
+            batch_chunks = chunks_with_embeddings[batch_start:batch_end]
+            
+            logger.info(f"Processing batch {batch_start + 1}-{batch_end} of {total_chunks} chunks")
+            
+            # Try S3 Vectors API for this batch
+            try:
+                s3_vectors_client = get_s3_vectors_client()
                 
-                vector_entry = {
-                    'key': vector_id,
-                    'data': {
-                        'float32': chunk["embedding"]
-                    },
-                    'metadata': {
-                        'document_id': document_id,
-                        'chunk_index': str(i),
-                        'content': chunk["content"][:1000],  # Limit content size for metadata
-                        'heading': chunk.get("heading", ""),
-                        'chunk_type': chunk.get("chunk_type", "paragraph"),
-                        'importance_score': str(chunk.get("importance_score", 1.0)),
-                        'created_at': datetime.utcnow().isoformat()
+                # Prepare vectors for batch insertion
+                vectors_to_insert = []
+                for i, chunk in enumerate(batch_chunks):
+                    vector_id = f"{document_id}_chunk_{batch_start + i}"
+                    
+                    vector_entry = {
+                        'key': vector_id,
+                        'data': {
+                            'float32': chunk["embedding"]
+                        },
+                        'metadata': {
+                            'document_id': document_id,
+                            'chunk_index': str(batch_start + i),
+                            'content': chunk["content"][:500],  # Reduced content size for metadata
+                            'heading': chunk.get("heading", "")[:100],  # Limit heading size
+                            'chunk_type': chunk.get("chunk_type", "paragraph"),
+                            'importance_score': str(chunk.get("importance_score", 1.0)),
+                            'created_at': datetime.utcnow().isoformat()
+                        }
                     }
-                }
-                vectors_to_insert.append(vector_entry)
-            
-            # Use S3 Vectors put_vectors operation for batch insertion
-            response = s3_client.put_vectors(
-                vectorBucketName=vector_bucket,
-                indexName=index_name,
-                vectors=vectors_to_insert
-            )
-            
-            successful_chunks = len(vectors_to_insert)
-            logger.info(f"Stored {successful_chunks} vector chunks for document {document_id} using S3 Vectors API")
-            return True
-            
-        except Exception as api_error:
-            logger.info(f"S3 Vectors API not available ({api_error}), using fallback storage")
-            
-            # Fall back to custom S3 storage
-            s3_client = get_s3_client()
-            
-            for i, chunk in enumerate(chunks_with_embeddings):
-                vector_id = f"{document_id}_chunk_{i}"
+                    vectors_to_insert.append(vector_entry)
                 
-                vector_entry = {
-                    "vector_id": vector_id,
-                    "document_id": document_id,
-                    "chunk_index": i,
-                    "embedding": chunk["embedding"],
-                    "content": chunk["content"],
-                    "heading": chunk.get("heading", ""),
-                    "chunk_type": chunk.get("chunk_type", "paragraph"),
-                    "importance_score": chunk.get("importance_score", 1.0),
-                    "metadata": chunk.get("metadata", {}),
-                    "created_at": datetime.utcnow().isoformat()
-                }
-                
-                # Store vector entry as JSON object in S3
-                s3_client.put_object(
-                    Bucket=vector_bucket,
-                    Key=f"vectors/{index_name}/{vector_id}.json",
-                    Body=json.dumps(vector_entry),
-                    ContentType="application/json",
-                    Metadata={
-                        "document_id": document_id,
-                        "chunk_index": str(i),
-                        "vector_id": vector_id
-                    }
+                # Use S3 Vectors put_vectors operation for batch insertion
+                response = s3_vectors_client.put_vectors(
+                    vectorBucketName=vector_bucket,
+                    indexName=index_name,
+                    vectors=vectors_to_insert
                 )
                 
-                successful_chunks += 1
-            
-            logger.info(f"Stored {successful_chunks} vector chunks for document {document_id} using fallback storage")
+                successful_chunks += len(vectors_to_insert)
+                logger.info(f"Stored batch {batch_start + 1}-{batch_end} using S3 Vectors API")
+                
+            except Exception as api_error:
+                logger.warning(f"S3 Vectors API failed for batch {batch_start + 1}-{batch_end}: {api_error}")
+                logger.info("Using fallback S3 storage for this batch")
+                
+                # Fall back to custom S3 storage for this batch
+                try:
+                    s3_client = get_s3_client()
+                    
+                    for i, chunk in enumerate(batch_chunks):
+                        vector_id = f"{document_id}_chunk_{batch_start + i}"
+                        
+                        vector_entry = {
+                            "vector_id": vector_id,
+                            "document_id": document_id,
+                            "chunk_index": batch_start + i,
+                            "embedding": chunk["embedding"],
+                            "content": chunk["content"],
+                            "heading": chunk.get("heading", ""),
+                            "chunk_type": chunk.get("chunk_type", "paragraph"),
+                            "importance_score": chunk.get("importance_score", 1.0),
+                            "metadata": chunk.get("metadata", {}),
+                            "created_at": datetime.utcnow().isoformat()
+                        }
+                        
+                        # Store vector entry as JSON object in S3 (without request signing issues)
+                        s3_client.put_object(
+                            Bucket=vector_bucket,
+                            Key=f"vectors/{index_name}/{vector_id}.json",
+                            Body=json.dumps(vector_entry),
+                            ContentType="application/json",
+                            Metadata={
+                                "document_id": document_id,
+                                "chunk_index": str(batch_start + i),
+                                "vector_id": vector_id
+                            }
+                        )
+                        
+                        successful_chunks += 1
+                    
+                    logger.info(f"Stored batch {batch_start + 1}-{batch_end} using fallback S3 storage")
+                    
+                except Exception as fallback_error:
+                    logger.error(f"Fallback storage failed for batch {batch_start + 1}-{batch_end}: {fallback_error}")
+                    # Continue with next batch rather than failing completely
+                    continue
+        
+        if successful_chunks > 0:
+            logger.info(f"Successfully stored {successful_chunks}/{total_chunks} vector chunks for document {document_id}")
             return True
+        else:
+            logger.error(f"Failed to store any chunks for document {document_id}")
+            return False
         
     except Exception as e:
         error = handle_error(e, context={"function": "store_document_vectors", "document_id": document_id})

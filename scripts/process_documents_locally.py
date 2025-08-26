@@ -307,11 +307,23 @@ class LocalDocumentProcessor:
             return ""
     
     def _create_chunks(self, text: str, metadata: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Create overlapping chunks from text with optimized parameters."""
+        """Create overlapping chunks from text with adaptive parameters for large documents."""
         sentences = sent_tokenize(text)
         chunks = []
-        max_chunk_size = 750   # Optimized: reduced from 1000
-        overlap_size = 100     # New: added overlap
+        
+        # Adaptive chunking based on document size
+        text_length = len(text)
+        if text_length > 500000:  # Very large documents (>500KB)
+            max_chunk_size = 600   # Smaller chunks for large docs
+            overlap_size = 75      # Reduced overlap
+            logger.info(f"Using small chunks for large document ({text_length:,} chars)")
+        elif text_length > 100000:  # Large documents (>100KB)
+            max_chunk_size = 700   # Medium chunks
+            overlap_size = 90      # Medium overlap
+            logger.info(f"Using medium chunks for large document ({text_length:,} chars)")
+        else:  # Normal documents
+            max_chunk_size = 750   # Standard chunks
+            overlap_size = 100     # Standard overlap
         
         current_chunk = ""
         current_size = 0
