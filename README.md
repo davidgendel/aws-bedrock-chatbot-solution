@@ -133,7 +133,7 @@ python3 src/backend/config_validator.py
 ## 📖 Documentation
 
 - **[DEPLOYMENT.md](DEPLOYMENT.md)** - Complete deployment guide
-- **[VECTOR_MANAGEMENT.md](VECTOR_MANAGEMENT.md)** - Vector index management guide
+- **[docs/vector_management.md](docs/vector_management.md)** - Vector index management guide
 - **[docs/request-signing.md](docs/request-signing.md)** - AWS request signing configuration
 - **[docs/troubleshooting.md](docs/troubleshooting.md)** - Common issues
 - **[docs/api-spec.yaml](docs/api-spec.yaml)** - API documentation
@@ -141,7 +141,7 @@ python3 src/backend/config_validator.py
 ## 🆘 Need Help?
 
 1. **Deployment Issues**: Check `deployment.log` and run `./deploy.sh status`
-2. **Vector Management**: See [VECTOR_MANAGEMENT.md](VECTOR_MANAGEMENT.md) for optimization and troubleshooting
+2. **Vector Management**: See [docs/vector_management.md](docs/vector_management.md) for optimization and troubleshooting
 3. **General Issues**: Check [docs/troubleshooting.md](docs/troubleshooting.md)
 4. **Vector Performance**: Run `./vector_manager.sh stats` to monitor performance
 
