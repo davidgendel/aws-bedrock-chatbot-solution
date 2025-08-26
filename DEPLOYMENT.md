@@ -5,12 +5,13 @@
 ## 📋 Prerequisites
 
 ### Required
-- ✅ **AWS Account** with billing enabled
+- ✅ **AWS Account** with proper permissions
 - ✅ **AWS CLI 2.27+** installed and configured (`aws configure`)
 - ✅ **Python 3.12+** installed
 - ✅ **Python venv** installed
 - ✅ **Node 22+** installed (for aws cdk)
 - ✅ **Git** installed
+- ✅ **Docker** installed (for Lambda layers)
 
 ### AWS Permissions Required
 Your AWS user/role needs:
