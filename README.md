@@ -36,7 +36,10 @@ cd aws-bedrock-chatbot-solution
 - AWS Account with appropriate permissions
 - AWS CLI 2.27+ configured (`aws configure`)
 - Python 3.12+ installed
+- Python venv installed
+- Node 22+ installed
 - Git installed
+- Docker installed
 
 ## 🛠️ Commands
 
