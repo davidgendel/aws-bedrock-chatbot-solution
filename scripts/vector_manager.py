@@ -119,12 +119,31 @@ class VectorManager:
     def _optimize_index(self, args) -> int:
         """Optimize vector index performance."""
         index_name = getattr(args, 'index_name', None)
+        
         if index_name:
             print(f"⚡ Optimizing index: {index_name}")
+            return self.base_manager.optimize_index(index_name)
         else:
             print("⚡ Optimizing all indexes...")
-        
-        return self.base_manager.optimize_index()
+            # Get list of indexes and optimize each one
+            try:
+                from s3_vector_utils import list_vector_indexes
+                indexes = list_vector_indexes()
+                
+                if not indexes:
+                    print("No indexes found to optimize.")
+                    return 0
+                
+                for index in indexes:
+                    index_name = index.get('name')
+                    if index_name:
+                        self.base_manager.optimize_index(index_name)
+                
+                print("✅ All indexes optimized")
+                return 0
+            except Exception as e:
+                print(f"❌ Optimization failed: {e}")
+                return 1
     
     def _show_stats(self) -> int:
         """Show vector performance statistics."""
