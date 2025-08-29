@@ -221,7 +221,7 @@ def get_s3_vectors_client() -> Any:
 
 def create_vector_index(index_name: str, dimensions: int = 1536, similarity_metric: str = "COSINE") -> bool:
     """
-    Create optimized S3 Vector index with HNSW-like hierarchical structure.
+    Create S3 Vector index using S3 Vectors API only.
     
     Args:
         index_name: Name of the vector index
@@ -238,100 +238,15 @@ def create_vector_index(index_name: str, dimensions: int = 1536, similarity_metr
         
         s3_vectors_client = get_s3_vectors_client()
         
-        # Try S3 Vectors native API first (most performant)
-        try:
-            # Create vector index using S3 Vectors API with correct method name
-            response = s3_vectors_client.create_index(
-                vectorBucketName=vector_bucket,
-                indexName=index_name,
-                dataType='float32',
-                dimension=dimensions,
-                distanceMetric=similarity_metric.lower()
-            )
-            logger.info(f"Created S3 Vector index '{index_name}' with dimensions {dimensions}")
-            return True
-            
-        except Exception as api_error:
-            logger.info(f"S3 Vectors API not available ({api_error}), using optimized fallback")
-            
-        # Optimized fallback with hierarchical partitioning (HNSW-like)
-        s3_client = get_s3_client()
-        
-        # Calculate optimal partitioning parameters
-        max_partition_size = 1000  # Optimal for memory and search performance
-        hierarchy_levels = 3  # Multi-level hierarchy for faster search
-        
-        index_config = {
-            "index_name": index_name,
-            "dimensions": dimensions,
-            "similarity_metric": similarity_metric,
-            "index_type": "HIERARCHICAL_HNSW",
-            "created_at": datetime.utcnow().isoformat(),
-            "status": "ACTIVE",
-            "optimization": {
-                "partitioning_enabled": True,
-                "max_partition_size": max_partition_size,
-                "hierarchy_levels": hierarchy_levels,
-                "cache_enabled": True,
-                "batch_processing": True,
-                "similarity_threshold_optimization": True
-            },
-            "hnsw_config": {
-                "m": 16,  # Connections per node
-                "ef_construction": 200,  # Build-time search width
-                "ef_search": 100,  # Query-time search width
-                "max_m": 16,
-                "max_m0": 32
-            }
-        }
-        
-        # Create index configuration
-        s3_client.put_object(
-            Bucket=vector_bucket,
-            Key=f"_indexes/{index_name}/config.json",
-            Body=json.dumps(index_config, indent=2),
-            ContentType="application/json"
+        # Use S3 Vectors API only - no fallbacks
+        response = s3_vectors_client.create_index(
+            vectorBucketName=vector_bucket,
+            indexName=index_name,
+            dataType='float32',
+            dimension=dimensions,
+            distanceMetric=similarity_metric.lower()
         )
-        
-        # Initialize hierarchical partition structure
-        partition_structure = {
-            "partitions": {},
-            "hierarchy": {
-                "level_0": [],  # Leaf partitions (actual vectors)
-                "level_1": [],  # Mid-level aggregations
-                "level_2": []   # Top-level centroids
-            },
-            "next_partition_id": 0,
-            "total_vectors": 0,
-            "centroids": {},  # Partition centroids for fast routing
-            "routing_table": {}  # Fast partition lookup
-        }
-        
-        s3_client.put_object(
-            Bucket=vector_bucket,
-            Key=f"_indexes/{index_name}/partitions.json",
-            Body=json.dumps(partition_structure, indent=2),
-            ContentType="application/json"
-        )
-        
-        # Create search optimization metadata
-        search_config = {
-            "search_strategy": "hierarchical",
-            "pruning_enabled": True,
-            "early_termination": True,
-            "beam_width": 10,  # Number of best candidates to explore
-            "max_visited_nodes": 1000,  # Limit for search termination
-            "similarity_cache_size": 10000
-        }
-        
-        s3_client.put_object(
-            Bucket=vector_bucket,
-            Key=f"_indexes/{index_name}/search_config.json",
-            Body=json.dumps(search_config, indent=2),
-            ContentType="application/json"
-        )
-        
-        logger.info(f"Created hierarchical optimized vector index '{index_name}' successfully")
+        logger.info(f"Created S3 Vector index '{index_name}' with dimensions {dimensions}")
         return True
         
     except Exception as e:
@@ -342,7 +257,7 @@ def create_vector_index(index_name: str, dimensions: int = 1536, similarity_metr
 
 def store_document_vectors(document_id: str, chunks_with_embeddings: List[Dict[str, Any]]) -> bool:
     """
-    Store document vectors in S3 Vector index with intelligent batching.
+    Store document vectors in S3 Vector index using correct S3 Vectors API.
     
     Args:
         document_id: Unique document identifier
@@ -360,110 +275,56 @@ def store_document_vectors(document_id: str, chunks_with_embeddings: List[Dict[s
         
         total_chunks = len(chunks_with_embeddings)
         successful_chunks = 0
-        
-        # Calculate optimal batch size based on payload size
-        # S3 Vectors API limit: ~1MB request body
-        # Each vector: 1536 dimensions × 4 bytes + metadata ≈ 7KB
-        # Safe batch size: 100 vectors ≈ 700KB (leaves room for metadata)
-        max_batch_size = 100
+        max_batch_size = 100  # S3 Vectors API batch limit
         
         logger.info(f"Processing {total_chunks} chunks in batches of {max_batch_size}")
         
-        # Process in batches
+        s3_vectors_client = get_s3_vectors_client()
+        
+        # Process in batches using correct S3 Vectors API
         for batch_start in range(0, total_chunks, max_batch_size):
             batch_end = min(batch_start + max_batch_size, total_chunks)
             batch_chunks = chunks_with_embeddings[batch_start:batch_end]
             
-            logger.info(f"Processing batch {batch_start + 1}-{batch_end} of {total_chunks} chunks")
-            
-            # Try S3 Vectors API for this batch
-            try:
-                s3_vectors_client = get_s3_vectors_client()
+            # Prepare vectors for S3 Vectors API
+            vectors_to_insert = []
+            for i, chunk in enumerate(batch_chunks):
+                vector_id = f"{document_id}_chunk_{batch_start + i}"
                 
-                # Prepare vectors for batch insertion
-                vectors_to_insert = []
-                for i, chunk in enumerate(batch_chunks):
-                    vector_id = f"{document_id}_chunk_{batch_start + i}"
-                    
-                    vector_entry = {
-                        'key': vector_id,
-                        'data': {
-                            'float32': chunk["embedding"]
-                        },
-                        'metadata': {
-                            'document_id': document_id,
-                            'chunk_index': str(batch_start + i),
-                            'content': chunk["content"][:500],  # Reduced content size for metadata
-                            'heading': chunk.get("heading", "")[:100],  # Limit heading size
-                            'chunk_type': chunk.get("chunk_type", "paragraph"),
-                            'importance_score': str(chunk.get("importance_score", 1.0)),
-                            'created_at': datetime.utcnow().isoformat()
-                        }
+                vector_entry = {
+                    'key': vector_id,
+                    'data': {
+                        'float32': chunk["embedding"]
+                    },
+                    'metadata': {
+                        'document_id': document_id,
+                        'chunk_index': str(batch_start + i),
+                        'content': chunk["content"][:500],
+                        'heading': chunk.get("heading", "")[:100],
+                        'chunk_type': chunk.get("chunk_type", "paragraph"),
+                        'importance_score': str(chunk.get("importance_score", 1.0)),
+                        'created_at': datetime.utcnow().isoformat()
                     }
-                    vectors_to_insert.append(vector_entry)
-                
-                # Use S3 Vectors put_vectors operation for batch insertion
+                }
+                vectors_to_insert.append(vector_entry)
+            
+            # Use correct S3 Vectors API call
+            try:
                 response = s3_vectors_client.put_vectors(
                     vectorBucketName=vector_bucket,
                     indexName=index_name,
                     vectors=vectors_to_insert
                 )
-                
                 successful_chunks += len(vectors_to_insert)
                 logger.info(f"Stored batch {batch_start + 1}-{batch_end} using S3 Vectors API")
                 
             except Exception as api_error:
-                logger.warning(f"S3 Vectors API failed for batch {batch_start + 1}-{batch_end}: {api_error}")
-                logger.info("Using fallback S3 storage for this batch")
-                
-                # Fall back to custom S3 storage for this batch
-                try:
-                    s3_client = get_s3_client()
-                    
-                    for i, chunk in enumerate(batch_chunks):
-                        vector_id = f"{document_id}_chunk_{batch_start + i}"
-                        
-                        vector_entry = {
-                            "vector_id": vector_id,
-                            "document_id": document_id,
-                            "chunk_index": batch_start + i,
-                            "embedding": chunk["embedding"],
-                            "content": chunk["content"],
-                            "heading": chunk.get("heading", ""),
-                            "chunk_type": chunk.get("chunk_type", "paragraph"),
-                            "importance_score": chunk.get("importance_score", 1.0),
-                            "metadata": chunk.get("metadata", {}),
-                            "created_at": datetime.utcnow().isoformat()
-                        }
-                        
-                        # Store vector entry as JSON object in S3 (without request signing issues)
-                        s3_client.put_object(
-                            Bucket=vector_bucket,
-                            Key=f"vectors/{index_name}/{vector_id}.json",
-                            Body=json.dumps(vector_entry),
-                            ContentType="application/json",
-                            Metadata={
-                                "document_id": document_id,
-                                "chunk_index": str(batch_start + i),
-                                "vector_id": vector_id
-                            }
-                        )
-                        
-                        successful_chunks += 1
-                    
-                    logger.info(f"Stored batch {batch_start + 1}-{batch_end} using fallback S3 storage")
-                    
-                except Exception as fallback_error:
-                    logger.error(f"Fallback storage failed for batch {batch_start + 1}-{batch_end}: {fallback_error}")
-                    # Continue with next batch rather than failing completely
-                    continue
+                logger.error(f"S3 Vectors API failed for batch {batch_start + 1}-{batch_end}: {api_error}")
+                return False
         
-        if successful_chunks > 0:
-            logger.info(f"Successfully stored {successful_chunks}/{total_chunks} vector chunks for document {document_id}")
-            return True
-        else:
-            logger.error(f"Failed to store any chunks for document {document_id}")
-            return False
+        success = successful_chunks == total_chunks
+        logger.info(f"Successfully stored {successful_chunks}/{total_chunks} vector chunks for document {document_id}")
+        return success
         
     except Exception as e:
         error = handle_error(e, context={"function": "store_document_vectors", "document_id": document_id})
@@ -478,7 +339,7 @@ def query_similar_vectors(
     filters: Optional[Dict[str, Any]] = None
 ) -> List[Dict[str, Any]]:
     """
-    Optimized vector similarity query using Amazon S3 Vectors native capabilities.
+    Query similar vectors using S3 Vectors API only.
     
     Args:
         query_embedding: Query vector embedding
@@ -490,14 +351,9 @@ def query_similar_vectors(
         List of similar documents with similarity scores
     """
     try:
-        # Fast input validation
         if not query_embedding or limit <= 0:
             return []
         
-        # Clamp similarity threshold
-        similarity_threshold = max(0.0, min(1.0, similarity_threshold))
-        
-        # Environment validation
         vector_bucket = os.environ.get("VECTOR_BUCKET_NAME")
         index_name = os.environ.get("VECTOR_INDEX_NAME")
         
@@ -505,81 +361,62 @@ def query_similar_vectors(
             logger.error("Vector configuration environment variables not set")
             return []
         
-        # Try S3 Vectors native API first (most performant)
-        try:
-            s3_vectors_client = get_s3_vectors_client()
-            
-            # Prepare query parameters for S3 Vectors API
-            query_params = {
-                'Bucket': vector_bucket,
-                'VectorIndexName': index_name,
-                'QueryVector': query_embedding,
-                'MaxResults': min(limit, 100),  # S3 Vectors API limit
-                'SimilarityThreshold': similarity_threshold
-            }
-            
-            # Add metadata filters if provided
-            if filters:
-                query_params['MetadataFilters'] = filters
-            
-            # Execute native S3 Vectors query
-            response = s3_vectors_client.query_vectors(**query_params)
-            
-            # Fast result processing
-            results = []
-            for match in response.get('Matches', []):
-                try:
-                    metadata = match.get('Metadata', {})
-                    similarity_score = float(match.get('SimilarityScore', 0.0))
-                    
-                    # Skip results below threshold (additional safety check)
-                    if similarity_score < similarity_threshold:
-                        continue
-                    
-                    result = {
-                        "id": match.get('Id', ''),
-                        "document_id": metadata.get('document_id', ''),
-                        "chunk_index": int(metadata.get('chunk_index', 0)),
-                        "content": metadata.get('content', ''),
-                        "heading": metadata.get('heading', ''),
-                        "chunk_type": metadata.get('chunk_type', 'paragraph'),
-                        "importance_score": float(metadata.get('importance_score', 1.0)),
-                        "metadata": metadata,
-                        "similarity": similarity_score
-                    }
-                    results.append(result)
-                    
-                except Exception as match_error:
-                    logger.debug(f"Error processing match: {match_error}")
+        s3_vectors_client = get_s3_vectors_client()
+        
+        # Use S3 Vectors API only - no fallbacks to S3
+        query_params = {
+            'vectorBucketName': vector_bucket,
+            'indexName': index_name,
+            'topK': min(limit, 100),
+            'queryVector': {
+                'float32': query_embedding
+            },
+            'returnMetadata': True,
+            'returnDistance': True
+        }
+        
+        # Add metadata filters if provided
+        if filters:
+            query_params['filter'] = filters
+        
+        # Execute S3 Vectors query
+        response = s3_vectors_client.query_vectors(**query_params)
+        
+        # Process results
+        results = []
+        for vector in response.get('vectors', []):
+            try:
+                metadata = vector.get('metadata', {})
+                distance = vector.get('distance', 1.0)
+                
+                # Convert distance to similarity (assuming cosine distance)
+                similarity = 1.0 - distance if distance <= 1.0 else 0.0
+                
+                if similarity < similarity_threshold:
                     continue
-            
-            # Sort by combined score (similarity * importance)
-            results.sort(key=lambda x: x["similarity"] * x["importance_score"], reverse=True)
-            
-            logger.info(f"S3 Vectors native query returned {len(results)} results")
-            return results[:limit]
-            
-        except Exception as s3_vectors_error:
-            logger.warning(f"S3 Vectors native query failed: {s3_vectors_error}")
-            # Fall back to optimized S3 implementation
-            
-        # Optimized fallback using hierarchical search or batch processing
-        try:
-            # Try hierarchical search first (HNSW-like)
-            return _hierarchical_vector_search(
-                query_embedding, limit, similarity_threshold, filters,
-                vector_bucket, index_name
-            )
-        except Exception as hierarchical_error:
-            logger.debug(f"Hierarchical search failed: {hierarchical_error}")
-            # Fall back to batch processing
-            return _query_vectors_optimized_batch(
-                query_embedding, limit, similarity_threshold, filters,
-                vector_bucket, index_name
-            )
-        except Exception as fallback_error:
-            logger.error(f"Optimized fallback failed: {fallback_error}")
-            return []
+                
+                result = {
+                    "id": vector.get('key', ''),
+                    "document_id": metadata.get('document_id', ''),
+                    "chunk_index": int(metadata.get('chunk_index', 0)),
+                    "content": metadata.get('content', ''),
+                    "heading": metadata.get('heading', ''),
+                    "chunk_type": metadata.get('chunk_type', 'paragraph'),
+                    "importance_score": float(metadata.get('importance_score', 1.0)),
+                    "metadata": metadata,
+                    "similarity": similarity
+                }
+                results.append(result)
+                
+            except Exception as match_error:
+                logger.debug(f"Error processing match: {match_error}")
+                continue
+        
+        # Sort by combined score
+        results.sort(key=lambda x: x["similarity"] * x["importance_score"], reverse=True)
+        
+        logger.info(f"S3 Vectors query returned {len(results)} results")
+        return results[:limit]
         
     except Exception as e:
         logger.error(f"Failed to query similar vectors: {e}")
@@ -1224,7 +1061,7 @@ def _apply_filters(vector_data: Dict[str, Any], filters: Dict[str, Any]) -> bool
 
 def calculate_cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
     """
-    Optimized cosine similarity calculation using NumPy with SIMD acceleration.
+    Calculate cosine similarity using NumPy.
     
     Args:
         vec1: First vector
@@ -1234,53 +1071,39 @@ def calculate_cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
         Cosine similarity score (0-1), 0.0 if calculation fails
     """
     try:
-        # Input validation
-        if not vec1 or not vec2:
+        if not vec1 or not vec2 or len(vec1) != len(vec2):
             return 0.0
         
-        if len(vec1) != len(vec2):
-            logger.error(f"Vector dimension mismatch: {len(vec1)} vs {len(vec2)}")
-            return 0.0
-        
-        # Import numpy - required for performance
         try:
             import numpy as np
-        except ImportError:
-            logger.error("NumPy not available - required for vector operations")
-            return _calculate_cosine_similarity_manual(vec1, vec2)
-        
-        # Fast conversion to numpy arrays with optimized dtype
-        try:
-            # Use float32 for better SIMD performance and memory efficiency
             a = np.asarray(vec1, dtype=np.float32)
             b = np.asarray(vec2, dtype=np.float32)
             
-            # Fast validity check using numpy operations
             if np.any(~np.isfinite(a)) or np.any(~np.isfinite(b)):
                 return 0.0
             
-            # Optimized dot product and norms using BLAS
             dot_product = np.dot(a, b)
             norm_a = np.linalg.norm(a)
             norm_b = np.linalg.norm(b)
             
-            # Fast zero-norm check
             if norm_a == 0.0 or norm_b == 0.0:
                 return 0.0
             
-            # Calculate cosine similarity
             similarity = dot_product / (norm_a * norm_b)
-            
-            # Fast range normalization to [0, 1]
-            # Cosine similarity is in [-1, 1], normalize to [0, 1]
-            similarity = (similarity + 1.0) * 0.5
-            
-            # Clamp to valid range
+            similarity = (similarity + 1.0) * 0.5  # Normalize to [0, 1]
             return float(np.clip(similarity, 0.0, 1.0))
             
-        except Exception as np_error:
-            logger.debug(f"NumPy calculation failed: {np_error}, using fallback")
-            return _calculate_cosine_similarity_manual(vec1, vec2)
+        except ImportError:
+            # Manual calculation if NumPy not available
+            dot_product = sum(a * b for a, b in zip(vec1, vec2))
+            norm_a = sum(a * a for a in vec1) ** 0.5
+            norm_b = sum(b * b for b in vec2) ** 0.5
+            
+            if norm_a == 0.0 or norm_b == 0.0:
+                return 0.0
+            
+            similarity = (dot_product / (norm_a * norm_b) + 1.0) * 0.5
+            return max(0.0, min(1.0, similarity))
         
     except Exception as e:
         logger.debug(f"Error in cosine similarity calculation: {e}")
@@ -1354,6 +1177,7 @@ def calculate_batch_cosine_similarity(query_vector: List[float], vectors: List[L
         return [calculate_cosine_similarity(query_vector, vec) for vec in vectors]
 
 
+def _calculate_cosine_similarity_manual(vec1: List[float], vec2: List[float]) -> float:
     """
     Optimized manual cosine similarity calculation as fallback.
     
@@ -1398,7 +1222,7 @@ def calculate_batch_cosine_similarity(query_vector: List[float], vectors: List[L
 
 def list_vector_indexes() -> List[Dict[str, Any]]:
     """
-    List all available vector indexes.
+    List all available vector indexes using S3 Vectors API only.
     
     Returns:
         List of vector index information
@@ -1410,28 +1234,54 @@ def list_vector_indexes() -> List[Dict[str, Any]]:
         
         s3_vectors_client = get_s3_vectors_client()
         
-        # Try native S3 Vectors API first
-        try:
-            response = s3_vectors_client.list_indexes(vectorBucketName=vector_bucket)
+        # Use S3 Vectors API only - no fallbacks
+        response = s3_vectors_client.list_indexes(vectorBucketName=vector_bucket)
+        
+        indexes = []
+        for index in response.get('indexes', []):
+            index_name = index.get('indexName')
             
-            indexes = []
-            for index in response.get('indexes', []):
+            try:
+                index_details = s3_vectors_client.get_index(
+                    vectorBucketName=vector_bucket,
+                    indexName=index_name
+                )
+                index_info = index_details.get('index', {})
+                
+                # Count vectors
+                vector_count = 0
+                try:
+                    vector_count = _count_vectors_in_index(vector_bucket, index_name, s3_vectors_client)
+                except Exception:
+                    vector_count = 0
+                
                 indexes.append({
-                    "name": index.get('indexName'),
+                    "name": index_name,
                     "arn": index.get('indexArn'),
                     "bucket": index.get('vectorBucketName'),
                     "created": index.get('creationTime'),
-                    "status": "ACTIVE"  # S3 Vectors indexes are active when listed
+                    "status": "ACTIVE",
+                    "dimensions": index_info.get('dimension', 0),
+                    "distance_metric": index_info.get('distanceMetric', 'unknown'),
+                    "data_type": index_info.get('dataType', 'float32'),
+                    "vector_count": vector_count,
+                    "native_api": True
                 })
-            
-            logger.info(f"Found {len(indexes)} native S3 Vector indexes")
-            return indexes
-            
-        except Exception as native_error:
-            logger.info(f"Using S3 implementation for index listing: {native_error}")
-            
-            # Fall back to S3 implementation
-            return _list_s3_vector_indexes(vector_bucket)
+                
+            except Exception as detail_error:
+                logger.warning(f"Could not get details for index {index_name}: {detail_error}")
+                indexes.append({
+                    "name": index_name,
+                    "arn": index.get('indexArn'),
+                    "bucket": index.get('vectorBucketName'),
+                    "created": index.get('creationTime'),
+                    "status": "ACTIVE",
+                    "vector_count": 0,
+                    "native_api": True
+                })
+        
+        logger.info(f"Found {len(indexes)} S3 Vector indexes")
+        return indexes
         
     except Exception as e:
         error = handle_error(e, context={"function": "list_vector_indexes"})
@@ -1465,8 +1315,9 @@ def _list_s3_vector_indexes(vector_bucket: str) -> List[Dict[str, Any]]:
                 
                 config = json.loads(config_response["Body"].read())
                 
-                # Count vectors in this index
-                vector_count = _count_vectors_in_index(vector_bucket, index_name, s3_client)
+                # Count vectors in this index using S3 Vectors API
+                s3_vectors_client = get_s3_vectors_client()
+                vector_count = _count_vectors_in_index(vector_bucket, index_name, s3_vectors_client)
                 
                 indexes.append({
                     "name": index_name,
@@ -1491,25 +1342,30 @@ def _list_s3_vector_indexes(vector_bucket: str) -> List[Dict[str, Any]]:
         return []
 
 
-def _count_vectors_in_index(vector_bucket: str, index_name: str, s3_client: Any) -> int:
-    """Count vectors in a specific index."""
+def _count_vectors_in_index(vector_bucket: str, index_name: str, s3_vectors_client: Any) -> int:
+    """Count vectors in a specific index using S3 Vectors API."""
     try:
-        response = s3_client.list_objects_v2(
-            Bucket=vector_bucket,
-            Prefix=f"vectors/{index_name}/",
-            MaxKeys=1000  # Limit for performance
-        )
+        vector_count = 0
+        next_token = None
         
-        count = 0
-        for obj in response.get('Contents', []):
-            if obj['Key'].endswith('.json'):
-                count += 1
-        
-        # If we hit the limit, this is an approximation
-        if response.get('IsTruncated', False):
-            logger.info(f"Vector count for {index_name} is approximate (>= {count})")
-        
-        return count
+        while True:
+            list_params = {
+                'vectorBucketName': vector_bucket,
+                'indexName': index_name,
+                'maxResults': 1000
+            }
+            if next_token:
+                list_params['nextToken'] = next_token
+                
+            response = s3_vectors_client.list_vectors(**list_params)
+            batch_count = len(response.get('vectors', []))
+            vector_count += batch_count
+            
+            next_token = response.get('nextToken')
+            if not next_token:
+                break
+                
+        return vector_count
         
     except Exception as e:
         logger.warning(f"Could not count vectors in index {index_name}: {e}")
@@ -1518,7 +1374,7 @@ def _count_vectors_in_index(vector_bucket: str, index_name: str, s3_client: Any)
 
 def get_vector_index_info(index_name: str) -> Optional[Dict[str, Any]]:
     """
-    Get detailed information about a specific vector index.
+    Get detailed information about a specific vector index using S3 Vectors API only.
     
     Args:
         index_name: Name of the vector index
@@ -1533,33 +1389,31 @@ def get_vector_index_info(index_name: str) -> Optional[Dict[str, Any]]:
         
         s3_vectors_client = get_s3_vectors_client()
         
-        # Try native S3 Vectors API first
-        try:
-            response = s3_vectors_client.get_index(
-                vectorBucketName=vector_bucket,
-                indexName=index_name
-            )
-            
-            index_data = response.get('index', {})
-            index_info = {
-                "name": index_data.get('indexName'),
-                "arn": index_data.get('indexArn'),
-                "bucket": index_data.get('vectorBucketName'),
-                "status": "ACTIVE",
-                "data_type": index_data.get('dataType'),
-                "dimensions": index_data.get('dimension'),
-                "distance_metric": index_data.get('distanceMetric'),
-                "created": index_data.get('creationTime'),
-                "native_api": True
-            }
-            
-            return index_info
-            
-        except Exception as native_error:
-            logger.info(f"Using S3 implementation for index info: {native_error}")
-            
-            # Fall back to S3 implementation
-            return _get_s3_vector_index_info(vector_bucket, index_name)
+        # Use S3 Vectors API only - no fallbacks
+        response = s3_vectors_client.get_index(
+            vectorBucketName=vector_bucket,
+            indexName=index_name
+        )
+        
+        index_data = response.get('index', {})
+        
+        # Count vectors using S3 Vectors API with pagination
+        vector_count = _count_vectors_in_index(vector_bucket, index_name, s3_vectors_client)
+        
+        index_info = {
+            "name": index_data.get('indexName'),
+            "arn": index_data.get('indexArn'),
+            "bucket": index_data.get('vectorBucketName'),
+            "status": "ACTIVE",
+            "data_type": index_data.get('dataType'),
+            "dimensions": index_data.get('dimension'),
+            "distance_metric": index_data.get('distanceMetric'),
+            "created": index_data.get('creationTime'),
+            "vector_count": vector_count,
+            "native_api": True
+        }
+        
+        return index_info
         
     except Exception as e:
         error = handle_error(e, context={"function": "get_vector_index_info", "index_name": index_name})
@@ -1590,8 +1444,9 @@ def _get_s3_vector_index_info(vector_bucket: str, index_name: str) -> Optional[D
         except Exception:
             partition_info = {"partitions": [], "next_partition_id": 0}
         
-        # Count vectors and calculate storage size
-        vector_count = _count_vectors_in_index(vector_bucket, index_name, s3_client)
+        # Count vectors and calculate storage size using S3 Vectors API
+        s3_vectors_client = get_s3_vectors_client()
+        vector_count = _count_vectors_in_index(vector_bucket, index_name, s3_vectors_client)
         storage_size = _calculate_index_storage_size(vector_bucket, index_name, s3_client)
         
         index_info = {
@@ -1639,7 +1494,7 @@ def _calculate_index_storage_size(vector_bucket: str, index_name: str, s3_client
 
 def delete_vector_index(index_name: str, force: bool = False) -> bool:
     """
-    Delete a vector index and all its vectors.
+    Delete a vector index using S3 Vectors API only.
     
     Args:
         index_name: Name of the vector index to delete
@@ -1661,21 +1516,16 @@ def delete_vector_index(index_name: str, force: bool = False) -> bool:
         
         if not force:
             logger.warning(f"This will permanently delete index '{index_name}' with {index_info['vector_count']} vectors")
-            # In a real implementation, you might want to add confirmation logic here
         
         s3_vectors_client = get_s3_vectors_client()
         
-        # Try native S3 Vectors API first
-        try:
-            s3_vectors_client.delete_vector_index(IndexName=index_name)
-            logger.info(f"Deleted native S3 Vector index '{index_name}'")
-            return True
-            
-        except Exception as native_error:
-            logger.info(f"Using S3 implementation for index deletion: {native_error}")
-            
-            # Fall back to S3 implementation
-            return _delete_s3_vector_index(vector_bucket, index_name)
+        # Use S3 Vectors API only - no fallbacks
+        s3_vectors_client.delete_index(
+            vectorBucketName=vector_bucket,
+            indexName=index_name
+        )
+        logger.info(f"Deleted S3 Vector index '{index_name}'")
+        return True
         
     except Exception as e:
         error = handle_error(e, context={"function": "delete_vector_index", "index_name": index_name})
@@ -2093,38 +1943,71 @@ def get_vector_index_stats() -> Dict[str, Any]:
         Dictionary containing index statistics
     """
     try:
-        indexes = list_vector_indexes()
+        vector_bucket = os.environ.get("VECTOR_BUCKET_NAME")
+        index_name = os.environ.get("VECTOR_INDEX_NAME")
         
-        if not indexes:
+        if not vector_bucket or not index_name:
             return {
-                "total_indexes": 0,
-                "total_vectors": 0,
-                "total_storage_bytes": 0,
-                "indexes": []
+                "success": False,
+                "error": "Vector configuration environment variables not set"
             }
         
-        total_vectors = sum(idx.get('vector_count', 0) for idx in indexes)
-        total_storage = sum(idx.get('storage_size_bytes', 0) for idx in indexes)
+        s3_vectors_client = get_s3_vectors_client()
         
-        # Calculate additional statistics
-        avg_vectors_per_index = total_vectors / len(indexes) if indexes else 0
-        
-        stats = {
-            "total_indexes": len(indexes),
-            "total_vectors": total_vectors,
-            "total_storage_bytes": total_storage,
-            "total_storage_mb": round(total_storage / (1024 * 1024), 2),
-            "average_vectors_per_index": round(avg_vectors_per_index, 2),
-            "indexes": indexes,
-            "cache_stats": get_cache_stats(),
-            "generated_at": datetime.utcnow().isoformat()
-        }
-        
-        return stats
+        # Get index info using S3 Vectors API
+        try:
+            index_response = s3_vectors_client.get_index(
+                vectorBucketName=vector_bucket,
+                indexName=index_name
+            )
+            
+            index_info = index_response.get('index', {})
+            
+            # Count vectors using paginated S3 Vectors API
+            vector_count = _count_vectors_in_index(vector_bucket, index_name, s3_vectors_client)
+            
+            indexes = [{
+                "name": index_info.get('indexName', index_name),
+                "arn": index_info.get('indexArn', ''),
+                "bucket": index_info.get('vectorBucketName', vector_bucket),
+                "created": index_info.get('creationTime', 'unknown'),
+                "status": "ACTIVE",
+                "dimensions": index_info.get('dimension', 0),
+                "distance_metric": index_info.get('distanceMetric', 'unknown'),
+                "data_type": index_info.get('dataType', 'float32'),
+                "vector_count": vector_count,
+                "storage_size_bytes": 0,  # Not available from S3 Vectors API
+                "native_api": True
+            }]
+            
+            stats = {
+                "success": True,
+                "total_indexes": 1,
+                "total_vectors": vector_count,
+                "total_storage_bytes": 0,
+                "total_storage_mb": 0.0,
+                "average_vectors_per_index": vector_count,
+                "indexes": indexes,
+                "cache_stats": get_cache_stats(),
+                "generated_at": datetime.utcnow().isoformat()
+            }
+            
+            return stats
+            
+        except Exception as api_error:
+            logger.error(f"S3 Vectors API error: {api_error}")
+            return {
+                "success": False,
+                "error": f"Failed to get vector index stats: {str(api_error)}"
+            }
         
     except Exception as e:
         error = handle_error(e, context={"function": "get_vector_index_stats"})
         logger.error(f"Failed to get vector index stats: {error}")
+        return {
+            "success": False,
+            "error": str(error)
+        }
 def store_document_metadata(document_id: str, metadata: Dict[str, Any]) -> bool:
     """
     Store document metadata in S3.
@@ -2163,7 +2046,7 @@ def store_document_metadata(document_id: str, metadata: Dict[str, Any]) -> bool:
 
 def delete_document_vectors(document_id: str) -> bool:
     """
-    Delete all vectors for a specific document.
+    Delete all vectors for a specific document using S3 Vectors API.
     
     Args:
         document_id: Document identifier
@@ -2178,54 +2061,37 @@ def delete_document_vectors(document_id: str) -> bool:
         if not vector_bucket or not index_name:
             raise ValueError("Vector configuration environment variables not set")
         
-        s3_client = get_s3_vectors_client()
+        s3_vectors_client = get_s3_vectors_client()
         
-        # Try S3 Vectors API first
+        # List vectors for this document using S3 Vectors API
         try:
-            # List vectors for this document
-            response = s3_client.list_vectors(
-                Bucket=vector_bucket,
-                VectorIndexName=index_name,
-                MetadataFilters={'document_id': document_id}
+            response = s3_vectors_client.list_vectors(
+                vectorBucketName=vector_bucket,
+                indexName=index_name,
+                returnMetadata=True
             )
             
-            # Delete vectors in batch
-            vector_ids = [vector['Id'] for vector in response.get('Vectors', [])]
-            if vector_ids:
-                s3_client.delete_vectors(
-                    Bucket=vector_bucket,
-                    VectorIndexName=index_name,
-                    VectorIds=vector_ids
+            # Find vectors belonging to this document
+            vector_keys_to_delete = []
+            for vector in response.get('vectors', []):
+                metadata = vector.get('metadata', {})
+                if metadata.get('document_id') == document_id:
+                    vector_keys_to_delete.append(vector.get('key'))
+            
+            # Delete vectors using S3 Vectors API
+            if vector_keys_to_delete:
+                s3_vectors_client.delete_vectors(
+                    vectorBucketName=vector_bucket,
+                    indexName=index_name,
+                    keys=vector_keys_to_delete
                 )
             
-            logger.info(f"Deleted {len(vector_ids)} vectors for document {document_id}")
+            logger.info(f"Deleted {len(vector_keys_to_delete)} vectors for document {document_id}")
             return True
             
         except Exception as api_error:
-            logger.info(f"S3 Vectors API not available, using fallback deletion: {api_error}")
-            
-            # Fall back to S3 object deletion
-            s3_client = get_s3_client()
-            
-            # List objects with document_id prefix
-            response = s3_client.list_objects_v2(
-                Bucket=vector_bucket,
-                Prefix=f"vectors/{index_name}/{document_id}_chunk_"
-            )
-            
-            objects_to_delete = []
-            for obj in response.get('Contents', []):
-                objects_to_delete.append({'Key': obj['Key']})
-            
-            # Delete objects in batch
-            if objects_to_delete:
-                s3_client.delete_objects(
-                    Bucket=vector_bucket,
-                    Delete={'Objects': objects_to_delete}
-                )
-            
-            logger.info(f"Deleted {len(objects_to_delete)} vector objects for document {document_id}")
-            return True
+            logger.error(f"S3 Vectors API deletion failed: {api_error}")
+            return False
         
     except Exception as e:
         error = handle_error(e, context={"function": "delete_document_vectors", "document_id": document_id})

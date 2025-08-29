@@ -33,7 +33,7 @@ cd aws-bedrock-chatbot-solution
 - AWS Account with appropriate permissions
 - AWS CLI 2.27+ configured (`aws configure`)
 - Python 3.12+ installed
-- Python venv installed
+- Python venv installed (`python3-venv` package)
 - Node 22+ installed
 - Git installed
 - Docker installed
@@ -48,30 +48,23 @@ cd aws-bedrock-chatbot-solution
 ./chatbot cleanup --s3-only # Empty S3 buckets only
 ```
 
-**Note**: The `./chatbot` script handles all deployment dependencies automatically. No manual `pip install` required for deployment.
+**Note**: The `./chatbot` and `./process_documents` scripts handle all dependencies automatically using isolated Python virtual environments. No manual `pip install` required.
 
 ## 📚 Document Management
 
-### **Local Document Processing Setup**
-
-For running document processing scripts locally, install the required dependencies:
-
-```bash
-# Install script dependencies (separate from Lambda layer)
-pip install -r scripts/requirements.txt
-```
-
 ### **Document Processing Commands**
+
+All commands automatically manage Python virtual environments to protect your system:
 
 ```bash
 # Process documents locally (recommended)
-python3 scripts/process_documents_locally.py --folder ./documents
+./process_documents --folder ./documents
 
 # Process single document
-python3 scripts/process_documents_locally.py --file ./doc.pdf
+./process_documents --file ./doc.pdf
 
 # Delete document
-python3 scripts/process_documents_locally.py --delete "document-id"
+./process_documents --delete "document-id"
 ```
 
 ### **Vector Index Management**

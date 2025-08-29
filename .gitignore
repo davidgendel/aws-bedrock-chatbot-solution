@@ -1,6 +1,7 @@
 **/__pycache__/*
 *.log
 **/.venv/**
+**/.venv-scripts/**
 **/cdk.out/**
 
 # Lambda layers (built at deployment time)

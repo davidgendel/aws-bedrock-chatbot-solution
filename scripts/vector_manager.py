@@ -46,8 +46,10 @@ class VectorManager:
         try:
             config = self._get_deployment_config()
             if config:
-                os.environ['VECTOR_BUCKET_NAME'] = config.get('vector_bucket', '')
-                os.environ['VECTOR_INDEX_NAME'] = config.get('vector_index', '')
+                os.environ['VECTOR_BUCKET_NAME'] = config.get('VectorBucketName', '')
+                os.environ['VECTOR_INDEX_NAME'] = config.get('VectorIndexName', '')
+                os.environ['METADATA_BUCKET_NAME'] = config.get('MetadataBucketName', '')
+                os.environ['DOCUMENT_BUCKET_NAME'] = config.get('DocumentBucketName', '')
         except Exception as e:
             print(f"⚠️  Could not load deployment config: {e}")
     
@@ -57,13 +59,8 @@ class VectorManager:
             return {}
         
         try:
-            # Try to get stack name from state
-            state_file = Path('deployment_state.json')
-            if state_file.exists():
-                state = json.loads(state_file.read_text())
-                stack_name = state.get('stack_name', 'bedrock-chatbot')
-            else:
-                stack_name = 'bedrock-chatbot'
+            # Use the correct stack name
+            stack_name = 'ChatbotRagStack'
             
             response = self.cf_client.describe_stacks(StackName=stack_name)
             outputs = response['Stacks'][0].get('Outputs', [])
@@ -72,8 +69,7 @@ class VectorManager:
             for output in outputs:
                 key = output['OutputKey']
                 value = output['OutputValue']
-                if 'Vector' in key or 'Bucket' in key:
-                    config[key.lower()] = value
+                config[key] = value
             
             return config
         except Exception as e:
