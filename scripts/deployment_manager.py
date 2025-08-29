@@ -138,18 +138,21 @@ class DeploymentManager:
         """Rollback deployment."""
         try:
             print(f"🔄 Rolling back stack {self.stack_name}...")
+            print("⏳ Note: CloudFront distribution deletion can take 15-45 minutes...")
             
             subprocess.run([
                 'cdk', 'destroy', 
                 '--force',
                 '--region', self.region,
                 '--app', 'python3 src/infrastructure/app.py'
-            ], check=True, timeout=600)
+            ], check=True, timeout=3000)  # 50 minutes timeout for CloudFront
             
             print("✅ Rollback completed")
             return 0
         except subprocess.TimeoutExpired:
-            print("⚠️  Rollback timed out")
+            print("⚠️  Rollback timed out after 50 minutes")
+            print("💡 CloudFront distributions can take up to 45 minutes to delete")
+            print("   Check AWS Console to monitor deletion progress")
             return 1
         except subprocess.CalledProcessError as e:
             print(f"❌ Rollback failed: {e}")
