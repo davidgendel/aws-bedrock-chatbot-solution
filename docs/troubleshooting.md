@@ -80,22 +80,20 @@ This guide provides solutions for common issues you might encounter during deplo
   pyenv global 3.12.0
   ```
 
-**Issue**: "pip install fails"
-- **Cause**: Missing system dependencies or permissions
+**Issue**: "Virtual environment creation fails"
+- **Cause**: Missing python3-venv package
 - **Solution**:
   ```bash
-  # Update pip first
-  python3 -m pip install --upgrade pip
+  # Install python3-venv package
+  # Ubuntu/Debian:
+  sudo apt install python3-venv
   
-  # Install with user flag if permission issues
-  # For local script dependencies only
-  pip install -r scripts/requirements.txt --user
+  # RHEL/CentOS:
+  sudo yum install python3-venv
   
-  # Or use virtual environment
-  python3 -m venv venv
-  source venv/bin/activate
-  # For local script dependencies only
-  pip install -r scripts/requirements.txt
+  # Dependencies are then managed automatically
+  ./chatbot validate
+  ./process_documents --help
   ```
 
 ## 🚀 Deployment Issues
@@ -210,7 +208,7 @@ This guide provides solutions for common issues you might encounter during deplo
   # Maximum file size: 10MB per document
   
   # Process documents manually
-  python3 scripts/process_documents_locally.py --file your-document.pdf
+  ./process_documents --file your-document.pdf
   ```
 
 ### Performance Issues

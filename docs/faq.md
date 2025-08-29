@@ -606,9 +606,9 @@ Actual costs may vary based on:
 
 **A:** Python troubleshooting:
 1. **Check Python version**: `python3 --version` (need 3.12+)
-2. **Update pip**: `python3 -m pip install --upgrade pip`
-3. **Use virtual environment**: `python3 -m venv .venv && source .venv/bin/activate`
-4. **For local script usage only**: `pip install -r scripts/requirements.txt`
+2. **Install python3-venv**: `sudo apt install python3-venv` (Ubuntu/Debian)
+3. **Virtual environments are automatic**: `./chatbot` and `./process_documents` handle all dependencies
+4. **Test setup**: `./chatbot validate` to verify everything works
 
 ### Q: How do I get support?
 

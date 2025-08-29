@@ -115,11 +115,8 @@ If you don't have an AWS account:
 mkdir -p documents
 cp your-files.pdf ./documents/
 
-# Install document processing dependencies
-pip install -r scripts/requirements.txt
-
-# Process documents
-python3 scripts/process_documents_locally.py --folder ./documents
+# Process documents (dependencies handled automatically)
+./process_documents --folder ./documents
 ```
 
 ### 2. Get Integration Code

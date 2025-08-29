@@ -35,11 +35,8 @@ cp your-files.pdf ./documents/
 
 ### Step 2: Process Documents
 ```bash
-# Install processing tools
-pip install -r scripts/requirements.txt
-
-# Process your documents
-python3 scripts/process_documents_locally.py --folder ./documents
+# Process your documents (dependencies handled automatically)
+./process_documents --folder ./documents
 ```
 
 **Supported formats**: PDF, DOCX, TXT, MD, HTML, CSV, JSON
@@ -103,7 +100,7 @@ Edit `config.json` to customize:
 ```bash
 # Add new documents anytime
 cp new-document.pdf ./documents/
-python3 scripts/process_documents_locally.py --file ./documents/new-document.pdf
+./process_documents --file ./documents/new-document.pdf
 ```
 
 ## 💰 Monitor Costs
@@ -267,13 +264,13 @@ The system supports a wide range of document formats:
 
 ```bash
 # Process entire folder
-python3 scripts/process_documents_locally.py --folder ./documents
+./process_documents --folder ./documents
 
 # Process single file
-python3 scripts/process_documents_locally.py --file ./documents/document.pdf
+./process_documents --file ./documents/document.pdf
 
 # Delete processed document
-python3 scripts/process_documents_locally.py --delete "document-id"
+./process_documents --delete "document-id"
 ```
 print('Processing status:', result['body'])
 "
@@ -406,9 +403,8 @@ python3 scripts/manage_vector_indexes.py --optimize
 # 3. Check system health
 ./chatbot status
 
-# 4. Update dependencies (if needed)
-# Only needed for local script usage
-pip install -r scripts/requirements.txt --upgrade
+# 4. Dependencies are managed automatically
+# Virtual environments handle all dependencies
 
 # 5. Generate maintenance report
 python3 -c "

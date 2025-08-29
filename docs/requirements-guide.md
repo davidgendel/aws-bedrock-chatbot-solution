@@ -2,11 +2,17 @@
 
 ## **📋 Overview**
 
-This project has multiple requirements files for different purposes. Here's when to use each:
+This project automatically manages all dependencies using virtual environments. No manual `pip install` required for normal usage.
 
 ## **🎯 Requirements Files Explained**
 
 ### **For Deployment (Automatic - No Action Needed)**
+
+#### **`requirements.txt`**
+- **Purpose**: Main deployment dependencies (automatic)
+- **Usage**: Handled automatically by `./chatbot`
+- **Contents**: boto3, CDK, numpy, scipy, etc.
+- **Action**: ❌ **DO NOT install manually**
 
 #### **`lambda_layer/requirements.txt`**
 - **Purpose**: Lambda layer dependencies (automatic)
@@ -14,19 +20,15 @@ This project has multiple requirements files for different purposes. Here's when
 - **Contents**: numpy, structlog, cachetools
 - **Action**: ❌ **DO NOT install manually**
 
-#### **`layers/boto3-layer/`**
-- **Purpose**: boto3 layer (automatic)
-- **Usage**: Handled automatically by `./chatbot`
-- **Contents**: boto3, botocore, s3transfer
+### **For Document Processing (Automatic - No Action Needed)**
+
+#### **`scripts/requirements.txt`**
+- **Purpose**: Document processing dependencies (automatic)
+- **Usage**: Handled automatically by `./process_documents`
+- **Contents**: PyPDF2, python-docx, Pillow, textstat, etc.
 - **Action**: ❌ **DO NOT install manually**
 
-### **For Local Usage (Manual Installation)**
-
-#### **`scripts/requirements.txt`** ✅ **RECOMMENDED**
-- **Purpose**: Local document processing scripts
-- **Usage**: `pip install -r scripts/requirements.txt`
-- **When**: Only if you want to run local document processing
-- **Contents**: PyPDF2, python-docx, Pillow, textstat, etc.
+### **For Development Only**
 
 #### **`requirements-dev.txt`**
 - **Purpose**: Development and testing
@@ -34,35 +36,15 @@ This project has multiple requirements files for different purposes. Here's when
 - **When**: Only for developers working on the codebase
 - **Contents**: pytest, moto, fastapi, etc.
 
-### **For Reference Only**
-
-#### **`requirements.txt`**
-- **Purpose**: Main project dependencies (reference)
-- **Usage**: ❌ **DO NOT install manually**
-- **When**: Used by CD./chatbot internally
-- **Contents**: boto3, CDK, numpy, scipy, etc.
-
-#### **`requirements-local.txt`**
-- **Purpose**: Local development (reference)
-- **Usage**: ❌ **DO NOT install manually**
-- **When**: Alternative to requirements.txt
-- **Contents**: Similar to requirements.txt
-
 ## **🚀 Quick Start Guide**
 
-### **For Normal Users (Just Deploy)**
+### **For Normal Users**
 ```bash
-# Deploy the chatbot (no pip install needed)
+# Deploy the chatbot (dependencies handled automatically)
 ./chatbot deploy
-```
 
-### **For Document Processing (Local Scripts)**
-```bash
-# Install script dependencies
-pip install -r scripts/requirements.txt
-
-# Process documents locally
-python3 scripts/process_documents_locally.py --folder ./documents
+# Process documents (dependencies handled automatically)
+./process_documents --folder ./documents
 ```
 
 ### **For Developers**
@@ -74,31 +56,46 @@ pip install -r requirements-dev.txt
 python3 run_tests.py
 ```
 
+## **🔧 Virtual Environment Management**
+
+The project automatically creates and manages virtual environments:
+- `.venv` - For deployment and CLI operations
+- `.venv-scripts` - For document processing
+
+**Prerequisites**: Ensure `python3-venv` is installed:
+```bash
+# Ubuntu/Debian
+sudo apt install python3-venv
+
+# RHEL/CentOS
+sudo yum install python3-venv
+```
+
 ## **❌ Common Mistakes to Avoid**
 
-1. **DON'T** run `pip install -r requirements.txt` (not needed for deployment)
-2. **DON'T** run `pip install -r lambda_layer/requirements.txt` (automatic)
-3. **DON'T** install dependencies before deployment (./chatbot handles it)
+1. **DON'T** run `pip install -r requirements.txt` (handled automatically)
+2. **DON'T** run `pip install -r scripts/requirements.txt` (handled automatically)
+3. **DON'T** create virtual environments manually (handled automatically)
 
 ## **✅ Correct Usage Summary**
 
-| Task | Command | When |
-|------|---------|------|
-| **Deploy chatbot** | `./chatbot deploy` | Always |
-| **Process documents locally** | `pip install -r scripts/requirements.txt` | Optional |
-| **Develop/test code** | `pip install -r requirements-dev.txt` | Developers only |
-| **Check status** | `./chatbot status` | After deployment |
+| Task | Command | Dependencies |
+|------|---------|--------------|
+| **Deploy chatbot** | `./chatbot deploy` | Automatic |
+| **Process documents** | `./process_documents --folder ./docs` | Automatic |
+| **Develop/test code** | `pip install -r requirements-dev.txt` | Manual |
+| **Check status** | `./chatbot status` | Automatic |
 
 ## **🔍 Troubleshooting**
 
 **Q: Should I install requirements.txt?**
-A: No, `./chatbot` handles all deployment dependencies automatically.
+A: No, `./chatbot` handles all dependencies automatically using virtual environments.
 
 **Q: I want to process documents locally, what do I install?**
-A: `pip install -r scripts/requirements.txt`
+A: Nothing. Use `./process_documents` - it handles dependencies automatically.
 
-**Q: I'm getting import errors during deployment**
-A: Don't install anything manually. Run `./chatbot deploy` - it handles all dependencies.
+**Q: I'm getting "python3-venv not found" errors**
+A: Install python3-venv package: `sudo apt install python3-venv` (Ubuntu/Debian)
 
 **Q: Which Python version?**
 A: Python 3.12+ required. Lambda uses Python 3.12.
