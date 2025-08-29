@@ -97,10 +97,10 @@ def test_signed_client_creation(mock_create_client):
 
 ```bash
 # Run tests with signing enabled
-python -m pytest tests/ -k "signing"
+python3 -m pytest tests/ -k "signing"
 
 # Test specific signing functionality
-python -m pytest tests/test_bedrock_utils.py::TestBedrockUtils::test_signed_client_creation
+python3 -m pytest tests/test_bedrock_utils.py::TestBedrockUtils::test_signed_client_creation
 ```
 
 ## 🔍 Monitoring and Debugging
@@ -196,13 +196,13 @@ logging.getLogger('request_signer').setLevel(logging.DEBUG)
 
 ```bash
 # Validate signing configuration
-python scripts/validate_signing.py
+python3 scripts/validate_signing.py
 
 # Test signed requests
-python scripts/validate_signing.py --test-requests
+python3 scripts/validate_signing.py --test-requests
 
 # Performance benchmark
-python scripts/validate_signing.py --benchmark
+python3 scripts/validate_signing.py --benchmark
 ```
 
 ## 🔒 Security Considerations
@@ -270,4 +270,4 @@ The implementation maintains full backward compatibility:
 
 - Check the [troubleshooting guide](troubleshooting.md)
 - Review [security best practices](../README.md#security)
-- Run validation tools: `python scripts/validate_signing.py`
+- Run validation tools: `python3 scripts/validate_signing.py`

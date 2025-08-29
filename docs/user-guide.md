@@ -8,24 +8,19 @@ This guide shows you how to set up and use your AI chatbot.
 
 1. **AWS Account** with billing enabled
 2. **AWS CLI** installed and configured (`aws configure`)
-3. **Python 3.9+** installed
+3. **Python 3.12+** installed
 4. **Git** installed
 
 ### Deploy Your Chatbot
 
-**Option 1: One-Command Setup (Easiest)**
-```bash
-curl -sSL https://raw.githubusercontent.com/your-github-username/aws-bedrock-chatbot-solution/main/install.sh | bash
-```
+See the [Deployment Guide](../DEPLOYMENT.md) for complete setup instructions.
 
-**Option 2: Manual Setup**
+**Quick deployment:**
 ```bash
 git clone https://github.com/your-github-username/aws-bedrock-chatbot-solution.git
 cd aws-bedrock-chatbot-solution
 ./deploy.sh deploy
 ```
-
-**Time needed**: 15-20 minutes
 
 ## 📚 Add Your Documents
 

@@ -20,26 +20,80 @@ Your AWS user/role needs:
 
 ## 🚀 Quick Start
 
-### One-Command Deployment
+### For Beginners
+
+**What You'll Need:**
+1. **A computer** (Windows, Mac, or Linux)
+2. **An AWS account** (see AWS Account Setup below)
+3. **About 15 minutes** of your time
+
+**How to Open Terminal/Command Prompt:**
+- **Windows**: Press `Win + R`, type `cmd`, press Enter
+- **Mac**: Press `Cmd + Space`, type "Terminal", press Enter
+- **Linux**: Press `Ctrl + Alt + T`
+
+### Deployment
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/your-github-username/aws-bedrock-chatbot-solution/main/install.sh | bash
+git clone https://github.com/your-github-username/aws-bedrock-chatbot-solution.git
+cd aws-bedrock-chatbot-solution
+
+# Optional: Validate your environment first
+./validate_config.sh
+
+# Deploy the chatbot
+./deploy.sh deploy
 ```
 
 **⚠️ IMPORTANT**: Replace `your-github-username` with your actual GitHub username.
 
 **Expected time**: 15-20 minutes
 
-## ⚡ Manual Deployment
+### AWS Account Setup (For Beginners)
 
-```bash
-git clone https://github.com/your-github-username/aws-bedrock-chatbot-solution.git
-cd aws-bedrock-chatbot-solution
-./deploy.sh deploy
-```
+If you don't have an AWS account:
+
+1. **Create an AWS Account**:
+   - Go to [aws.amazon.com](https://aws.amazon.com)
+   - Click "Create an AWS Account"
+   - Follow the signup process (you'll need a credit card)
+
+2. **Install AWS CLI**:
+   
+   **Windows:**
+   ```cmd
+   # Download and install from: https://aws.amazon.com/cli/
+   # After installation, open Command Prompt and run:
+   aws configure
+   ```
+   
+   **Mac:**
+   ```bash
+   # Install using Homebrew (get it from brew.sh if needed)
+   brew install awscli
+   aws configure
+   ```
+   
+   **Linux:**
+   ```bash
+   sudo apt install awscli  # Ubuntu/Debian
+   # or
+   sudo yum install awscli  # CentOS/RHEL
+   aws configure
+   ```
+
+3. **Configure AWS CLI**:
+   When you run `aws configure`, enter:
+   - **Access Key ID**: Get from AWS Console → IAM → Users → Your User → Security Credentials
+   - **Secret Access Key**: You'll get this with the Access Key
+   - **Region**: Choose closest to you (e.g., `us-east-1` for US East Coast)
+   - **Output format**: Just press Enter
 
 ### Deployment Commands:
 ```bash
+# Validate environment before deployment (recommended)
+./validate_config.sh
+
 # Deploy with atomic guarantees
 ./deploy.sh deploy
 
@@ -109,12 +163,7 @@ aws logs describe-log-groups --log-group-name-prefix "/aws/lambda/ChatbotRag"
 
 ## 💰 Cost Management
 
-### Estimated Monthly Costs
-- **50 users/day**: $11
-- **250 users/day**: $40
-- **500 users/day**: $79
-
-*Includes AI processing, hosting, vector storage, security, and 20% caching savings*
+For detailed cost information and estimates, see the [Cost Analysis Guide](docs/cost-analysis.md).
 
 ## 🗑️ Uninstalling
 

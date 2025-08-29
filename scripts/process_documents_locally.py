@@ -230,8 +230,42 @@ class LocalDocumentProcessor:
             }
     
     def _get_aws_region(self) -> str:
-        """Get AWS region."""
-        return os.environ.get('AWS_DEFAULT_REGION', 'us-east-1')
+        """Get AWS region with comprehensive fallback chain."""
+        # Try environment variables first
+        region = (
+            os.environ.get('AWS_REGION') or 
+            os.environ.get('AWS_DEFAULT_REGION') or 
+            os.environ.get('CDK_DEPLOY_REGION')
+        )
+        
+        if region:
+            return region
+        
+        # Try AWS CLI configuration
+        try:
+            import subprocess
+            result = subprocess.run(['aws', 'configure', 'get', 'region'], 
+                                  capture_output=True, text=True, timeout=10)
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout.strip()
+        except (subprocess.TimeoutExpired, FileNotFoundError, ImportError):
+            pass
+        
+        # Try config.json if it exists
+        try:
+            config_path = Path(__file__).parent.parent / "config.json"
+            if config_path.exists():
+                with open(config_path, 'r') as f:
+                    config = json.load(f)
+                    if config.get('region'):
+                        return config['region']
+        except (json.JSONDecodeError, IOError):
+            pass
+        
+        # Final fallback with warning
+        logger.warning("No region specified, defaulting to us-east-1")
+        logger.warning("Set AWS_REGION environment variable or run 'aws configure' to specify region")
+        return 'us-east-1'
     
     def _extract_text_from_file(self, file_path: str) -> str:
         """Extract text from various file formats."""

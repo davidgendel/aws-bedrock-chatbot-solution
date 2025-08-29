@@ -338,7 +338,7 @@ class SetupWizard:
         # Check prerequisites first
         if not self.check_prerequisites():
             print(f"\n{Colors.RED}❌ Prerequisites not met. Please install required software first.{Colors.NC}")
-            print(f"{Colors.CYAN}See docs/deployment-guide.md for detailed instructions.{Colors.NC}")
+            print(f"{Colors.CYAN}See DEPLOYMENT.md for detailed instructions.{Colors.NC}")
             return False
         
         try:

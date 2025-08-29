@@ -9,7 +9,7 @@
 **Required:**
 1. **AWS Account** with billing enabled
 2. **AWS CLI** installed and configured (`aws configure`)
-3. **Python 3.9+** installed
+3. **Python 3.12+** installed
 4. **Git** installed
 
 **Automatically Installed:**
@@ -17,29 +17,21 @@
 - Python packages (installed from requirements files)
 - Node.js dependencies (if needed)
 
-### Q: What's the difference between one-command and manual deployment?
+### Q: How do I deploy the chatbot?
 
-**A: Two deployment options are available:**
+**A: Simple deployment process:**
 
-**One-Command Deployment:**
-```bash
-curl -sSL https://raw.githubusercontent.com/your-github-username/aws-bedrock-chatbot-solution/main/install.sh | bash
-```
-- ✅ Fully automated (downloads code automatically)
-- ✅ Checks prerequisites automatically
-- ✅ Best for beginners
-
-**Manual Deployment:**
 ```bash
 git clone https://github.com/your-github-username/aws-bedrock-chatbot-solution.git
 cd aws-bedrock-chatbot-solution
 ./deploy.sh deploy
 ```
-- ✅ Full control over the process
-- ✅ Can review code before deployment
-- ✅ Best for experienced users
 
-Both methods include automatic rollback on failure and take the same amount of time.
+**Features:**
+- ✅ Full control over deployment process
+- ✅ Checks prerequisites automatically
+- ✅ Automatic rollback on failure
+- ✅ Takes 15-20 minutes
 
 ### Q: How long does deployment actually take?
 
@@ -159,18 +151,18 @@ For production, you can create a more restrictive policy after deployment.
 **Batch Upload (Recommended):**
 ```bash
 # Upload entire folder
-python3 -m scripts.upload_documents --folder ./documents
+python3 scripts/upload_documents.py --folder ./documents
 
 # Upload specific file types
-python3 -m scripts.upload_documents --folder ./docs --types pdf,txt,md
+python3 scripts/upload_documents.py --folder ./docs --types pdf,txt,md
 
 # Batch processing with custom size
-python3 -m scripts.upload_documents --folder ./docs --batch-size 5
+python3 scripts/upload_documents.py --folder ./docs --batch-size 5
 ```
 
 **Single Document:**
 ```bash
-python3 -m scripts.upload_documents --file document.pdf
+python3 scripts/upload_documents.py --file document.pdf
 ```
 
 **Programmatic Upload:**
@@ -433,7 +425,7 @@ python3 scripts/recovery_manager.py --analyze --suggest
 ./deploy.sh deploy
 
 # Upload documents
-python3 -m scripts.upload_documents --folder ./documents
+python3 scripts/upload_documents.py --folder ./documents
 
 # Optimize performance
 python3 scripts/manage_vector_indexes.py --optimize
@@ -571,7 +563,7 @@ Actual costs may vary based on:
 **A:** Update process:
 1. **Pull latest code**: `git pull origin main`
 2. **Run deployment**: `./deploy.sh`
-3. **Upload new documents**: `python -m scripts.upload_documents --folder ./documents`
+3. **Upload new documents**: `python3 scripts/upload_documents.py --folder ./documents`
 
 **Zero downtime**: Updates are deployed without interrupting service
 

@@ -7,10 +7,6 @@ Deploy an AI chatbot that learns from your documents in 15-20 minutes. **Startin
 ## 🚀 Quick Start
 
 ```bash
-# One-command deployment
-curl -sSL https://raw.githubusercontent.com/your-github-username/aws-bedrock-chatbot-solution/main/install.sh | bash
-
-# Or manual deployment
 git clone https://github.com/your-github-username/aws-bedrock-chatbot-solution.git
 cd aws-bedrock-chatbot-solution
 ./deploy.sh deploy
@@ -44,6 +40,7 @@ cd aws-bedrock-chatbot-solution
 ## 🛠️ Commands
 
 ```bash
+./validate_config.sh   # Validate environment before deployment
 ./deploy.sh deploy     # Deploy chatbot (no pip install needed)
 ./deploy.sh status     # Check status
 ./deploy.sh rollback   # Remove deployment
@@ -119,6 +116,8 @@ Maintain optimal performance with built-in vector management tools:
 - **Security**: WAF, Guardrails, rate limiting
 - **CDN**: CloudFront for global delivery
 - **Caching**: Multi-layer response and context caching
+
+For detailed architecture information, see [Architecture Guide](docs/architecture.md).
 
 ## 🧪 Testing
 

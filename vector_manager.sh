@@ -34,15 +34,46 @@ print_error() {
 get_deployment_config() {
     print_info "Getting deployment configuration..."
     
+    # Source common configuration library
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    if [ -f "$SCRIPT_DIR/scripts/common/aws_config.sh" ]; then
+        source "$SCRIPT_DIR/scripts/common/aws_config.sh"
+    else
+        print_error "Cannot find AWS configuration library"
+        print_warning "Please ensure scripts/common/aws_config.sh exists"
+        return 1
+    fi
+    
+    # Validate AWS environment
+    if ! validate_aws_environment >/dev/null 2>&1; then
+        print_error "AWS environment validation failed"
+        print_warning "Please ensure AWS CLI is configured: aws configure"
+        return 1
+    fi
+    
     # Try to get from CloudFormation first
     VECTOR_BUCKET_NAME=$(aws cloudformation describe-stacks --stack-name ChatbotRagStack --query 'Stacks[0].Outputs[?OutputKey==`VectorBucketName`].OutputValue' --output text 2>/dev/null || echo "")
     VECTOR_INDEX_NAME=$(aws cloudformation describe-stacks --stack-name ChatbotRagStack --query 'Stacks[0].Outputs[?OutputKey==`VectorIndexName`].OutputValue' --output text 2>/dev/null || echo "")
     
-    # Fallback to manual values if CloudFormation fails
-    if [ -z "$VECTOR_BUCKET_NAME" ] || [ -z "$VECTOR_INDEX_NAME" ]; then
-        print_warning "Could not get configuration from CloudFormation, using manual values"
-        VECTOR_BUCKET_NAME="chatbot-vectors-665832733337-us-east-1"
+    # Fallback to dynamic construction if CloudFormation fails
+    if [ -z "$VECTOR_BUCKET_NAME" ] || [ -z "$VECTOR_INDEX_NAME" ] || [ "$VECTOR_BUCKET_NAME" = "None" ] || [ "$VECTOR_INDEX_NAME" = "None" ]; then
+        print_warning "Could not get configuration from CloudFormation, constructing dynamically"
+        
+        # Get AWS account and region dynamically
+        local account_id region
+        account_id=$(get_aws_config "account")
+        region=$(get_aws_config "region")
+        
+        if [ $? -ne 0 ]; then
+            print_error "Failed to get AWS configuration"
+            return 1
+        fi
+        
+        # Construct resource names dynamically
+        VECTOR_BUCKET_NAME="chatbot-vectors-${account_id}-${region}"
         VECTOR_INDEX_NAME="chatbot-document-vectors"
+        
+        print_warning "Using dynamically constructed names"
     else
         print_success "Got configuration from CloudFormation"
     fi

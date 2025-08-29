@@ -33,15 +33,54 @@ class DeploymentValidator:
     def __init__(self, config_file: str = "config.json"):
         self.config_file = config_file
         self.config = {}
-        self.region = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION") or "us-east-1"
+        # Improved region detection with better fallback chain
+        self.region = self._get_region()
         self.stack_name = "ChatbotRagStack"
+        
+    def _get_region(self) -> str:
+        """Get AWS region with comprehensive fallback chain."""
+        # Try environment variables first
+        region = (
+            os.environ.get("AWS_REGION") or 
+            os.environ.get("AWS_DEFAULT_REGION") or 
+            os.environ.get("CDK_DEPLOY_REGION")
+        )
+        
+        if region:
+            return region
+        
+        # Try AWS CLI configuration
+        try:
+            result = subprocess.run(['aws', 'configure', 'get', 'region'], 
+                                  capture_output=True, text=True, timeout=10)
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout.strip()
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+        
+        # Try config.json if it exists
+        try:
+            if os.path.exists(self.config_file):
+                with open(self.config_file, 'r') as f:
+                    config = json.load(f)
+                    if config.get('region'):
+                        return config['region']
+        except (json.JSONDecodeError, IOError):
+            pass
+        
+        # Final fallback with warning
+        self.print_warning("No region specified, defaulting to us-east-1")
+        self.print_warning("Set AWS_REGION environment variable or run 'aws configure' to specify region")
+        return "us-east-1"
         
     def load_config(self) -> bool:
         """Load configuration from file."""
         try:
             with open(self.config_file, 'r') as f:
                 self.config = json.load(f)
-            self.region = self.config.get('region') or os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION") or "us-east-1"
+            # Update region from config if available, otherwise keep detected region
+            if self.config.get('region'):
+                self.region = self.config['region']
             return True
         except FileNotFoundError:
             self.print_error(f"Configuration file {self.config_file} not found")

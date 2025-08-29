@@ -564,7 +564,7 @@ export USE_ASYNC_PROCESSING=true
 export MAX_BATCH_SIZE=10
 
 # Process documents in batches
-python3 -m scripts.upload_documents --folder ./docs --batch-size 10
+python3 scripts/upload_documents.py --folder ./docs --batch-size 10
 ```
 
 ### 4. Resource Right-sizing

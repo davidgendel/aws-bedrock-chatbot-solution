@@ -504,6 +504,24 @@ execute_phase() {
 phase_validate() {
     echo -e "${CYAN}🔍 Validating deployment prerequisites...${NC}"
     
+    # Source common validation library if available
+    if [ -f "scripts/common/validation.sh" ]; then
+        source scripts/common/validation.sh
+        
+        # Use comprehensive validation
+        if validate_deployment_environment; then
+            echo -e "${GREEN}✅ Comprehensive validation passed${NC}"
+            return 0
+        else
+            echo -e "${RED}❌ Comprehensive validation failed${NC}"
+            return 1
+        fi
+    else
+        # Fallback to basic validation if library not available
+        echo -e "${YELLOW}⚠️  Using basic validation (common library not found)${NC}"
+    fi
+    
+    # Basic validation (fallback)
     # Check required commands
     local required_commands=("aws" "python3" "node" "npm")
     for cmd in "${required_commands[@]}"; do
@@ -516,6 +534,24 @@ phase_validate() {
     # Validate AWS credentials
     if ! aws sts get-caller-identity &>> "$LOG_FILE"; then
         echo -e "${RED}❌ AWS credentials not configured${NC}"
+        echo -e "${YELLOW}💡 Run: aws configure${NC}"
+        return 1
+    fi
+    
+    # Get and display AWS configuration
+    local account_id region
+    account_id=$(aws sts get-caller-identity --query Account --output text 2>/dev/null)
+    region=$(aws configure get region 2>/dev/null || echo "us-east-1")
+    
+    if [ -n "$account_id" ] && [ -n "$region" ]; then
+        echo -e "${GREEN}✅ AWS Account: $account_id${NC}"
+        echo -e "${GREEN}✅ AWS Region: $region${NC}"
+        
+        # Export for use by other phases
+        export AWS_ACCOUNT_ID="$account_id"
+        export AWS_REGION="$region"
+    else
+        echo -e "${RED}❌ Could not determine AWS account or region${NC}"
         return 1
     fi
     
@@ -523,6 +559,14 @@ phase_validate() {
     if [ ! -f "$CONFIG_FILE" ]; then
         echo -e "${RED}❌ Configuration file not found: $CONFIG_FILE${NC}"
         return 1
+    fi
+    
+    # Basic JSON validation
+    if command -v python3 &> /dev/null; then
+        if ! python3 -c "import json; json.load(open('$CONFIG_FILE'))" 2>> "$LOG_FILE"; then
+            echo -e "${RED}❌ Invalid JSON in configuration file${NC}"
+            return 1
+        fi
     fi
     
     # Run Python validation if available
