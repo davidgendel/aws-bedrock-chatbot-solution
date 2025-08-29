@@ -26,7 +26,7 @@ class ModelConfig:
             "stop_sequences": [],
             "request_format": "nova",
             "streaming_supported": True,
-            "embedding_model": "amazon.titan-embed-text-v1"
+            "embedding_model": "amazon.titan-embed-text-v2:0"
         },
         ModelType.CLAUDE_3_HAIKU.value: {
             "type": "anthropic",
@@ -36,7 +36,7 @@ class ModelConfig:
             "stop_sequences": [],
             "request_format": "anthropic",
             "streaming_supported": True,
-            "embedding_model": "amazon.titan-embed-text-v1"
+            "embedding_model": "amazon.titan-embed-text-v2:0"
         },
         ModelType.CLAUDE_3_SONNET.value: {
             "type": "anthropic",
@@ -46,7 +46,7 @@ class ModelConfig:
             "stop_sequences": [],
             "request_format": "anthropic",
             "streaming_supported": True,
-            "embedding_model": "amazon.titan-embed-text-v1"
+            "embedding_model": "amazon.titan-embed-text-v2:0"
         }
     }
     

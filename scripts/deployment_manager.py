@@ -1,181 +1,134 @@
 #!/usr/bin/env python3
-"""Atomic deployment manager with rollback capability."""
+"""CDK deployment manager with rollback capability."""
 
 import os
 import sys
 import json
 import subprocess
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Dict, Any
 
 # Add scripts to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
 from aws_config import get_aws_region
 
-# Add src to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
-
-try:
-    from backend.deployment_state_manager import DeploymentStateManager
-except ImportError:
-    class DeploymentStateManager:
-        def save_state(self, state): pass
-        def load_state(self): return {}
-        def clear_state(self): pass
-
-class DeploymentError(Exception):
-    """Custom deployment exception."""
-    pass
-
-class AtomicDeployment:
-    """Context manager for atomic deployments with rollback."""
-    
-    def __init__(self):
-        self.lock_file = Path(".deployment.lock")
-        self.resources_created = []
-        self.state_manager = DeploymentStateManager()
-    
-    def __enter__(self):
-        if self.lock_file.exists():
-            raise DeploymentError("Another deployment is in progress")
-        self.lock_file.write_text(str(os.getpid()))
-        return self
-    
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if exc_type:
-            self._cleanup_resources()
-        self.lock_file.unlink(missing_ok=True)
-    
-    def _cleanup_resources(self):
-        """Cleanup resources on failure."""
-        print("🔄 Rolling back deployment...")
-        for resource in reversed(self.resources_created):
-            try:
-                self._delete_resource(resource)
-            except Exception as e:
-                print(f"⚠️  Failed to cleanup {resource}: {e}")
-    
-    def _delete_resource(self, resource: Dict[str, Any]):
-        """Delete a single resource."""
-        if resource['type'] == 'cloudformation':
-            try:
-                subprocess.run([
-                    'aws', 'cloudformation', 'delete-stack', 
-                    '--stack-name', resource['name'],
-                    '--region', get_aws_region()
-                ], check=True, timeout=300)
-            except subprocess.TimeoutExpired:
-                print(f"⚠️  Timeout deleting stack {resource['name']}")
-            except subprocess.CalledProcessError as e:
-                print(f"⚠️  Failed to delete stack {resource['name']}: {e}")
-
 class DeploymentManager:
-    """Main deployment manager."""
+    """CDK deployment manager."""
     
     def __init__(self):
-        self.state_manager = DeploymentStateManager()
+        self.stack_name = "ChatbotRagStack"
+        self.region = get_aws_region()
     
     def deploy(self, args) -> int:
-        """Execute deployment with atomic operations."""
+        """Execute CDK deployment."""
         try:
-            with AtomicDeployment() as atomic:
-                return self._execute_deployment(atomic, args)
-        except DeploymentError as e:
+            print("🚀 Starting CDK deployment...")
+            
+            # Check CDK bootstrap
+            self._ensure_cdk_bootstrap()
+            
+            # Install dependencies
+            self._install_dependencies()
+            
+            # Deploy with CDK
+            self._deploy_cdk()
+            
+            print("✅ Deployment completed successfully")
+            return 0
+        except Exception as e:
             print(f"❌ Deployment failed: {e}")
             return 1
-        except Exception as e:
-            print(f"❌ Unexpected error: {e}")
-            return 1
     
-    def _execute_deployment(self, atomic: AtomicDeployment, args) -> int:
-        """Execute the actual deployment steps."""
-        print("🚀 Starting deployment...")
-        
-        # Load existing configuration
-        config = self._load_config()
-        
-        # Deploy CloudFormation stack
-        stack_name = config.get('stack_name', 'bedrock-chatbot')
-        self._deploy_cloudformation(atomic, stack_name)
-        
-        # Save deployment state
-        state = {
-            'stack_name': stack_name,
-            'status': 'deployed',
-            'resources': atomic.resources_created
-        }
-        self.state_manager.save_state(state)
-        
-        print("✅ Deployment completed successfully")
-        return 0
-    
-    def _load_config(self) -> Dict[str, Any]:
-        """Load deployment configuration."""
-        config_file = Path('deployment_config.json')
-        if config_file.exists():
-            try:
-                return json.loads(config_file.read_text())
-            except json.JSONDecodeError as e:
-                print(f"⚠️  Invalid config file: {e}")
-        return {}
-    
-    def _deploy_cloudformation(self, atomic: AtomicDeployment, stack_name: str):
-        """Deploy CloudFormation stack."""
-        template_file = Path('cloudformation/main.yaml')
-        if not template_file.exists():
-            raise DeploymentError(f"Template not found: {template_file}")
-        
-        cmd = [
-            'aws', 'cloudformation', 'deploy',
-            '--template-file', str(template_file),
-            '--stack-name', stack_name,
-            '--capabilities', 'CAPABILITY_IAM',
-            '--region', get_aws_region()
-        ]
-        
+    def _ensure_cdk_bootstrap(self):
+        """Ensure CDK is bootstrapped."""
+        print("🔍 Checking CDK bootstrap...")
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
-            if result.returncode != 0:
-                raise DeploymentError(f"CloudFormation deployment failed: {result.stderr}")
+            result = subprocess.run([
+                'cdk', 'doctor', '--region', self.region
+            ], capture_output=True, text=True, timeout=30)
+            
+            if "not bootstrapped" in result.stdout or "not bootstrapped" in result.stderr:
+                print("🔧 Bootstrapping CDK...")
+                subprocess.run([
+                    'cdk', 'bootstrap', '--region', self.region
+                ], check=True, timeout=300)
         except subprocess.TimeoutExpired:
-            raise DeploymentError("CloudFormation deployment timed out")
+            print("⚠️  CDK bootstrap check timed out, proceeding...")
+        except subprocess.CalledProcessError as e:
+            print(f"⚠️  CDK bootstrap failed: {e}")
+    
+    def _install_dependencies(self):
+        """Install required dependencies."""
+        print("📦 Installing dependencies...")
         
-        atomic.resources_created.append({
-            'type': 'cloudformation',
-            'name': stack_name
-        })
+        # Check if we're in a virtual environment
+        in_venv = hasattr(sys, 'real_prefix') or (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix)
+        
+        if not in_venv:
+            print("⚠️  Not in virtual environment, skipping pip install")
+            print("💡 Dependencies should be installed in a virtual environment")
+        else:
+            # Install Python dependencies only if in venv
+            subprocess.run([
+                'pip', 'install', '-r', 'requirements.txt'
+            ], check=True, timeout=300)
+        
+        # Check if package.json exists for CDK dependencies
+        if Path('package.json').exists():
+            subprocess.run([
+                'npm', 'install'
+            ], check=True, timeout=300, cwd=Path.cwd())
+        else:
+            print("📦 No package.json found, skipping npm install")
+    
+    def _deploy_cdk(self):
+        """Deploy using CDK."""
+        print("🚀 Deploying infrastructure with CDK...")
+        
+        # Set CDK app path
+        os.environ['CDK_DEFAULT_REGION'] = self.region
+        
+        # Deploy the stack
+        subprocess.run([
+            'cdk', 'deploy', 
+            '--require-approval', 'never',
+            '--region', self.region,
+            '--app', 'python3 src/infrastructure/app.py'
+        ], check=True, timeout=1800)
     
     def status(self, args) -> int:
         """Check deployment status."""
         try:
-            state = self.state_manager.load_state()
-            if not state:
-                print("❌ No deployment found")
+            print("🔍 Checking deployment status...")
+            
+            result = subprocess.run([
+                'aws', 'cloudformation', 'describe-stacks',
+                '--stack-name', self.stack_name,
+                '--region', self.region
+            ], capture_output=True, text=True, timeout=30)
+            
+            if result.returncode == 0:
+                stack_info = json.loads(result.stdout)
+                status = stack_info['Stacks'][0]['StackStatus']
+                print(f"✅ Stack {self.stack_name}: {status}")
+                
+                # Show outputs if available
+                outputs = stack_info['Stacks'][0].get('Outputs', [])
+                if outputs:
+                    print("\n📋 Stack Outputs:")
+                    for output in outputs:
+                        print(f"  {output['OutputKey']}: {output['OutputValue']}")
+                
+                return 0
+            else:
+                print("❌ Stack not found")
                 return 1
-            
-            stack_name = state.get('stack_name')
-            if stack_name:
-                try:
-                    result = subprocess.run([
-                        'aws', 'cloudformation', 'describe-stacks',
-                        '--stack-name', stack_name,
-                        '--region', get_aws_region()
-                    ], capture_output=True, text=True, timeout=30)
-                    
-                    if result.returncode == 0:
-                        stack_info = json.loads(result.stdout)
-                        status = stack_info['Stacks'][0]['StackStatus']
-                        print(f"✅ Stack {stack_name}: {status}")
-                        return 0
-                except subprocess.TimeoutExpired:
-                    print("⚠️  Status check timed out")
-                    return 1
-                except json.JSONDecodeError:
-                    print("⚠️  Invalid response from AWS CLI")
-                    return 1
-            
-            print("❌ Stack not found")
+        except subprocess.TimeoutExpired:
+            print("⚠️  Status check timed out")
+            return 1
+        except json.JSONDecodeError:
+            print("⚠️  Invalid response from AWS CLI")
             return 1
         except Exception as e:
             print(f"❌ Status check failed: {e}")
@@ -184,29 +137,22 @@ class DeploymentManager:
     def rollback(self, args) -> int:
         """Rollback deployment."""
         try:
-            state = self.state_manager.load_state()
-            if not state:
-                print("❌ No deployment to rollback")
-                return 1
+            print(f"🔄 Rolling back stack {self.stack_name}...")
             
-            stack_name = state.get('stack_name')
-            if stack_name:
-                print(f"🔄 Rolling back stack {stack_name}...")
-                try:
-                    subprocess.run([
-                        'aws', 'cloudformation', 'delete-stack',
-                        '--stack-name', stack_name,
-                        '--region', get_aws_region()
-                    ], check=True, timeout=300)
-                    
-                    self.state_manager.clear_state()
-                    print("✅ Rollback completed")
-                    return 0
-                except subprocess.TimeoutExpired:
-                    print("⚠️  Rollback timed out")
-                    return 1
+            subprocess.run([
+                'cdk', 'destroy', 
+                '--force',
+                '--region', self.region,
+                '--app', 'python3 src/infrastructure/app.py'
+            ], check=True, timeout=600)
             
-            print("❌ No stack to rollback")
+            print("✅ Rollback completed")
+            return 0
+        except subprocess.TimeoutExpired:
+            print("⚠️  Rollback timed out")
+            return 1
+        except subprocess.CalledProcessError as e:
+            print(f"❌ Rollback failed: {e}")
             return 1
         except Exception as e:
             print(f"❌ Rollback failed: {e}")

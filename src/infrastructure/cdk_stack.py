@@ -616,7 +616,7 @@ def handler(event, context):
                 "GUARDRAIL_ID": self.guardrail["guardrail"].attr_guardrail_id if self.guardrail and self.guardrail.get("guardrail") else "",
                 "GUARDRAIL_VERSION": self.guardrail["version"].attr_version if self.guardrail and self.guardrail.get("version") else ""
             },
-            log_retention=logs.RetentionDays.ONE_WEEK,
+            log_group=self.log_groups["standard_logs"],
         )
 
         # Create Lambda alias for provisioned concurrency
@@ -772,21 +772,11 @@ def handler(event, context):
 
     def _create_cloudfront_distribution(self) -> cloudfront.Distribution:
         """Create CloudFront distribution for website assets."""
-        # Create Origin Access Identity for S3 bucket access
-        origin_access_identity = cloudfront.OriginAccessIdentity(
-            self, "ChatbotOAI",
-            comment="OAI for Chatbot website bucket"
-        )
-
-        # Grant CloudFront access to the S3 bucket
-        self.s3_buckets["website_bucket"].grant_read(origin_access_identity)
-
-        return cloudfront.Distribution(
+        distribution = cloudfront.Distribution(
             self, "ChatbotDistribution",
             default_behavior=cloudfront.BehaviorOptions(
-                origin=origins.S3Origin(
-                    self.s3_buckets["website_bucket"],
-                    origin_access_identity=origin_access_identity
+                origin=origins.S3BucketOrigin(
+                    bucket=self.s3_buckets["website_bucket"]
                 ),
                 viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
                 cache_policy=cloudfront.CachePolicy.CACHING_OPTIMIZED,
@@ -797,9 +787,8 @@ def handler(event, context):
             additional_behaviors={
                 # Cache JavaScript files longer
                 "*.js": cloudfront.BehaviorOptions(
-                    origin=origins.S3Origin(
-                        self.s3_buckets["website_bucket"],
-                        origin_access_identity=origin_access_identity
+                    origin=origins.S3BucketOrigin(
+                        bucket=self.s3_buckets["website_bucket"]
                     ),
                     viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
                     cache_policy=cloudfront.CachePolicy.CACHING_OPTIMIZED,
@@ -807,9 +796,8 @@ def handler(event, context):
                 ),
                 # Cache HTML files with shorter TTL
                 "*.html": cloudfront.BehaviorOptions(
-                    origin=origins.S3Origin(
-                        self.s3_buckets["website_bucket"],
-                        origin_access_identity=origin_access_identity
+                    origin=origins.S3BucketOrigin(
+                        bucket=self.s3_buckets["website_bucket"]
                     ),
                     viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
                     cache_policy=cloudfront.CachePolicy.CACHING_DISABLED,  # Don't cache HTML for updates
@@ -839,6 +827,22 @@ def handler(event, context):
             enabled=True,
             http_version=cloudfront.HttpVersion.HTTP2,
         )
+
+        # Grant CloudFront access to the S3 bucket using bucket policy
+        self.s3_buckets["website_bucket"].add_to_resource_policy(
+            iam.PolicyStatement(
+                actions=["s3:GetObject"],
+                resources=[f"{self.s3_buckets['website_bucket'].bucket_arn}/*"],
+                principals=[iam.ServicePrincipal("cloudfront.amazonaws.com")],
+                conditions={
+                    "StringEquals": {
+                        "AWS:SourceArn": f"arn:aws:cloudfront::{self.account}:distribution/{distribution.distribution_id}"
+                    }
+                }
+            )
+        )
+
+        return distribution
 
     def _create_waf(self) -> wafv2.CfnWebACL:
         """Create WAF Web ACL for API protection."""
