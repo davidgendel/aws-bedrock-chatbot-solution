@@ -4,37 +4,34 @@ This guide covers how to manage your AWS S3 Vector indexes for the RAG chatbot s
 
 ## 🚀 Quick Start
 
-### Option 1: Use the Wrapper Script (Recommended)
+### Recommended Commands
 
-The easiest way to manage vector indexes is using the wrapper script that automatically handles environment variables:
+The easiest way to manage vector indexes is using the chatbot CLI:
 
 ```bash
 # List all vector indexes
-./vector_manager.sh list
+./chatbot vector list
 
 # Get detailed information about an index
-./vector_manager.sh info chatbot-document-vectors
+./chatbot vector info
 
 # Optimize vector index performance
-./vector_manager.sh optimize chatbot-document-vectors
+./chatbot vector optimize
 
 # Show comprehensive statistics
-./vector_manager.sh stats
+./chatbot vector stats
 
 # Clear all vector caches
-./vector_manager.sh clear-cache
+./chatbot vector clear-cache
 ```
 
-### Option 2: Direct Commands
+### Direct Python Commands
 
-If you prefer to use the Python script directly, first set up the environment:
+If you prefer to use the Python script directly:
 
 ```bash
-# Set up environment variables
-source setup_vector_env.sh
-
-# Then run commands directly
-python3 scripts/manage_vector_indexes.py optimize chatbot-document-vectors
+# Run commands directly (environment is handled automatically)
+python3 scripts/manage_vector_indexes.py optimize
 python3 scripts/manage_vector_indexes.py list
 python3 scripts/manage_vector_indexes.py stats
 ```
@@ -43,19 +40,19 @@ python3 scripts/manage_vector_indexes.py stats
 
 | Command | Description | Usage |
 |---------|-------------|-------|
-| **list** | List all vector indexes with details | `./vector_manager.sh list` |
-| **info** | Show detailed index information | `./vector_manager.sh info <index-name>` |
-| **optimize** | Optimize vector index performance | `./vector_manager.sh optimize <index-name>` |
-| **stats** | Show comprehensive statistics | `./vector_manager.sh stats` |
-| **clear-cache** | Clear all vector caches | `./vector_manager.sh clear-cache` |
-| **create** | Create a new vector index | `./vector_manager.sh create <index-name>` |
-| **delete** | Delete a vector index | `./vector_manager.sh delete <index-name>` |
+| **list** | List all vector indexes with details | `./chatbot vector list` |
+| **info** | Show detailed index information | `./chatbot vector info` |
+| **optimize** | Optimize vector index performance | `./chatbot vector optimize` |
+| **stats** | Show comprehensive statistics | `./chatbot vector stats` |
+| **clear-cache** | Clear all vector caches | `./chatbot vector clear-cache` |
+| **create** | Create a new vector index | `./chatbot vector create <index-name>` |
+| **delete** | Delete a vector index | `./chatbot vector delete <index-name>` |
 
 ## 🔍 Command Details
 
 ### List Command
 ```bash
-./vector_manager.sh list
+./chatbot vector list
 ```
 **Output:**
 - ✅ Index status and name
@@ -67,7 +64,7 @@ python3 scripts/manage_vector_indexes.py stats
 
 ### Info Command
 ```bash
-./vector_manager.sh info chatbot-document-vectors
+./chatbot vector info
 ```
 **Output:**
 - 📋 Detailed index configuration
@@ -77,7 +74,7 @@ python3 scripts/manage_vector_indexes.py stats
 
 ### Optimize Command
 ```bash
-./vector_manager.sh optimize chatbot-document-vectors
+./chatbot vector optimize
 ```
 **What it does:**
 - 🧹 Clears all vector caches for fresh data
@@ -87,7 +84,7 @@ python3 scripts/manage_vector_indexes.py stats
 
 ### Stats Command
 ```bash
-./vector_manager.sh stats
+./chatbot vector stats
 ```
 **Output:**
 - 🌐 Overall statistics across all indexes
@@ -105,11 +102,10 @@ python3 scripts/manage_vector_indexes.py stats
 **Solution:**
 ```bash
 # Use the wrapper script (automatically sets variables)
-./vector_manager.sh optimize chatbot-document-vectors
+./chatbot vector optimize
 
-# OR set up environment manually
-source setup_vector_env.sh
-python3 scripts/manage_vector_indexes.py optimize chatbot-document-vectors
+# OR run Python script directly (environment handled automatically)
+python3 scripts/manage_vector_indexes.py optimize
 ```
 
 #### 2. Wrong Command Syntax
@@ -121,9 +117,9 @@ python3 scripts/manage_vector_indexes.py optimize chatbot-document-vectors
 python3 scripts/manage_vector_indexes.py --optimize
 
 # ✅ Correct
-python3 scripts/manage_vector_indexes.py optimize chatbot-document-vectors
+python3 scripts/manage_vector_indexes.py optimize
 # OR
-./vector_manager.sh optimize chatbot-document-vectors
+./chatbot vector optimize
 ```
 
 #### 3. Index Not Found
@@ -132,10 +128,10 @@ python3 scripts/manage_vector_indexes.py optimize chatbot-document-vectors
 **Solution:**
 ```bash
 # Check what indexes exist
-./vector_manager.sh list
+./chatbot vector list
 
 # Verify deployment status
-./deploy.sh status
+./chatbot status
 ```
 
 #### 4. Permission Issues
@@ -172,7 +168,7 @@ aws iam get-role --role-name <your-lambda-role>
 ### Creating Custom Indexes
 ```bash
 # Create a new index with default settings
-./vector_manager.sh create my-custom-index
+./chatbot vector create my-custom-index
 
 # The script will use standard settings:
 # - Dimensions: 1536 (for Titan embeddings) or 1024 (for Nova)
@@ -183,25 +179,25 @@ aws iam get-role --role-name <your-lambda-role>
 ### Batch Operations
 ```bash
 # Get stats for all indexes
-./vector_manager.sh stats
+./chatbot vector stats
 
 # Clear all caches
-./vector_manager.sh clear-cache
+./chatbot vector clear-cache
 
 # List all indexes
-./vector_manager.sh list
+./chatbot vector list
 ```
 
 ### Monitoring and Maintenance
 ```bash
 # Regular optimization (recommended weekly)
-./vector_manager.sh optimize chatbot-document-vectors
+./chatbot vector optimize
 
 # Monitor cache performance
-./vector_manager.sh stats | grep "Hit Rate"
+./chatbot vector stats | grep "Hit Rate"
 
 # Check index health
-./vector_manager.sh info chatbot-document-vectors
+./chatbot vector info
 ```
 
 ## 🔐 Security Notes
@@ -223,7 +219,7 @@ aws iam get-role --role-name <your-lambda-role>
 If you encounter issues:
 
 1. **Check the logs**: Look for error messages in the command output
-2. **Verify deployment**: Run `./deploy.sh status`
+2. **Verify deployment**: Run `./chatbot status`
 3. **Check permissions**: Ensure proper AWS IAM roles
 4. **Review configuration**: Verify environment variables are set correctly
 
@@ -237,5 +233,5 @@ If you encounter issues:
 
 **🎯 Ready to optimize your vectors?**
 ```bash
-./vector_manager.sh optimize chatbot-document-vectors
+./chatbot vector optimize
 ```

@@ -55,7 +55,6 @@ class RecoveryManager:
             "config": {
                 "substeps": [
                     "backup_existing_config",
-                    "run_setup_wizard",
                     "validate_config"
                 ],
                 "rollback_actions": [

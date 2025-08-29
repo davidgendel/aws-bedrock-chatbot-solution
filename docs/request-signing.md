@@ -259,7 +259,6 @@ The implementation supports:
 
 ### Backward Compatibility
 
-The implementation maintains full backward compatibility:
 - Existing code continues to work unchanged
 - Signing can be disabled per client
 - Graceful fallback on signing failures

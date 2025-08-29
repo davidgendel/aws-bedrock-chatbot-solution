@@ -21,7 +21,7 @@ If you deployed using the standard deployment script, use the built-in rollback 
 cd chatbot-rag-v1.0
 
 # Perform automatic rollback/uninstall
-./deploy.sh rollback
+./chatbot rollback
 ```
 
 This will:

@@ -39,10 +39,10 @@ git clone https://github.com/your-github-username/aws-bedrock-chatbot-solution.g
 cd aws-bedrock-chatbot-solution
 
 # Optional: Validate your environment first
-./validate_config.sh
+./chatbot validate
 
 # Deploy the chatbot
-./deploy.sh deploy
+./chatbot deploy
 ```
 
 **⚠️ IMPORTANT**: Replace `your-github-username` with your actual GitHub username.
@@ -92,19 +92,19 @@ If you don't have an AWS account:
 ### Deployment Commands:
 ```bash
 # Validate environment before deployment (recommended)
-./validate_config.sh
+./chatbot validate
 
 # Deploy with atomic guarantees
-./deploy.sh deploy
+./chatbot deploy
 
 # Check deployment status
-./deploy.sh status
+./chatbot status
 
 # Manual rollback if needed
-./deploy.sh rollback
+./chatbot rollback
 
 # Empty S3 buckets only
-./deploy.sh cleanup-s3
+./chatbot cleanup --s3-only
 ```
 
 ## 📚 Post-Deployment Setup
@@ -148,7 +148,7 @@ aws sts get-caller-identity
 
 **S3 bucket errors**: Empty buckets before rollback
 ```bash
-./deploy.sh cleanup-s3
+./chatbot cleanup --s3-only
 ```
 
 **Lambda timeout**: Check CloudWatch logs
@@ -158,7 +158,7 @@ aws logs describe-log-groups --log-group-name-prefix "/aws/lambda/ChatbotRag"
 
 ### Getting Help
 1. Check `deployment.log` for detailed error messages
-2. Run `./deploy.sh status` to see current state
+2. Run `./chatbot status` to see current state
 3. See `docs/troubleshooting.md` for detailed solutions
 
 ## 💰 Cost Management
@@ -169,10 +169,10 @@ For detailed cost information and estimates, see the [Cost Analysis Guide](docs/
 
 ```bash
 # Complete removal
-./deploy.sh rollback
+./chatbot rollback
 
 # Manual cleanup if needed
-./deploy.sh cleanup-s3
+./chatbot cleanup --s3-only
 aws cloudformation delete-stack --stack-name ChatbotRagStack
 ```
 
@@ -188,5 +188,5 @@ aws cloudformation delete-stack --stack-name ChatbotRagStack
 
 **Ready to deploy?**
 ```bash
-./deploy.sh deploy
+./chatbot deploy
 ```

@@ -9,10 +9,11 @@ Deploy an AI chatbot that learns from your documents in 15-20 minutes. **Startin
 ```bash
 git clone https://github.com/your-github-username/aws-bedrock-chatbot-solution.git
 cd aws-bedrock-chatbot-solution
-./deploy.sh deploy
+./chatbot deploy
 ```
 
 **⚠️ Replace `your-github-username` with your actual GitHub username**
+
 
 ## ✨ Features
 
@@ -40,14 +41,14 @@ cd aws-bedrock-chatbot-solution
 ## 🛠️ Commands
 
 ```bash
-./validate_config.sh   # Validate environment before deployment
-./deploy.sh deploy     # Deploy chatbot (no pip install needed)
-./deploy.sh status     # Check status
-./deploy.sh rollback   # Remove deployment
-./deploy.sh cleanup-s3 # Empty S3 buckets only
+./chatbot validate        # Validate environment before deployment
+./chatbot deploy          # Deploy chatbot (no pip install needed)
+./chatbot status          # Check status
+./chatbot rollback        # Remove deployment
+./chatbot cleanup --s3-only # Empty S3 buckets only
 ```
 
-**Note**: The `./deploy.sh` script handles all deployment dependencies automatically. No manual `pip install` required for deployment.
+**Note**: The `./chatbot` script handles all deployment dependencies automatically. No manual `pip install` required for deployment.
 
 ## 📚 Document Management
 
@@ -79,16 +80,16 @@ Maintain optimal performance with built-in vector management tools:
 
 ```bash
 # Optimize vector index performance (recommended weekly)
-./vector_manager.sh optimize chatbot-document-vectors
+./chatbot vector optimize
 
 # Monitor performance and costs
-./vector_manager.sh stats
+./chatbot vector stats
 
 # List all vector indexes with details
-./vector_manager.sh list
+./chatbot vector list
 
 # Clear caches after bulk document updates
-./vector_manager.sh clear-cache
+./chatbot vector clear-cache
 ```
 
 **Key Benefits:**
@@ -142,10 +143,10 @@ python3 src/backend/config_validator.py
 
 ## 🆘 Need Help?
 
-1. **Deployment Issues**: Check `deployment.log` and run `./deploy.sh status`
+1. **Deployment Issues**: Check `deployment.log` and run `./chatbot status`
 2. **Vector Management**: See [docs/vector_management.md](docs/vector_management.md) for optimization and troubleshooting
 3. **General Issues**: Check [docs/troubleshooting.md](docs/troubleshooting.md)
-4. **Vector Performance**: Run `./vector_manager.sh stats` to monitor performance
+4. **Vector Performance**: Run `./chatbot vector stats` to monitor performance
 
 ## 📄 License
 
@@ -155,10 +156,10 @@ MIT License - Free for commercial and personal use.
 
 **Ready to deploy?**
 ```bash
-./deploy.sh deploy
+./chatbot deploy
 ```
 
 **Ready to optimize your vectors?**
 ```bash
-./vector_manager.sh optimize chatbot-document-vectors
+./chatbot vector optimize
 ```

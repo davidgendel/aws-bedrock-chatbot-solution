@@ -24,7 +24,7 @@
 ```bash
 git clone https://github.com/your-github-username/aws-bedrock-chatbot-solution.git
 cd aws-bedrock-chatbot-solution
-./deploy.sh deploy
+./chatbot deploy
 ```
 
 **Features:**
@@ -341,20 +341,20 @@ python3 scripts/cleanup_vectors.py --days 90
 **Standard Deployment:**
 ```bash
 # Try recovery first
-./deploy.sh --recover
+./chatbot --recover
 
 # If that fails, clean and retry
-./deploy.sh --clean
-./deploy.sh
+./chatbot --clean
+./chatbot
 ```
 
 **Atomic Deployment:**
 ```bash
 # Automatic rollback
-./deploy.sh rollback
+./chatbot rollback
 
 # Then retry
-./deploy.sh deploy
+./chatbot deploy
 ```
 
 **Manual Analysis:**
@@ -419,10 +419,10 @@ python3 scripts/recovery_manager.py --analyze --suggest
 ### Essential Commands
 ```bash
 # Deploy (standard)
-./deploy.sh
+./chatbot
 
 # Deploy (atomic with rollback)
-./deploy.sh deploy
+./chatbot deploy
 
 # Upload documents
 python3 scripts/upload_documents.py --folder ./documents
@@ -431,7 +431,7 @@ python3 scripts/upload_documents.py --folder ./documents
 python3 scripts/manage_vector_indexes.py --optimize
 
 # Check status
-./deploy.sh status
+./chatbot status
 
 # Clean up old data
 python3 scripts/cleanup_vectors.py --days 90
@@ -450,9 +450,9 @@ python3 scripts/cleanup_vectors.py --days 90
 ### Q: What if deployment fails?
 
 **A:** Try these steps in order:
-1. **Resume deployment**: `./deploy.sh --recover`
+1. **Resume deployment**: `./chatbot --recover`
 2. **Check the log**: `cat deployment.log`
-3. **Clean and retry**: `./deploy.sh --clean` then `./deploy.sh`
+3. **Clean and retry**: `./chatbot --clean` then `./chatbot`
 4. **Manual CDK bootstrap**: `cdk bootstrap --region your-region`
 
 ## 💰 Costs & Billing
@@ -562,7 +562,7 @@ Actual costs may vary based on:
 
 **A:** Update process:
 1. **Pull latest code**: `git pull origin main`
-2. **Run deployment**: `./deploy.sh`
+2. **Run deployment**: `./chatbot`
 3. **Upload new documents**: `python3 scripts/upload_documents.py --folder ./documents`
 
 **Zero downtime**: Updates are deployed without interrupting service

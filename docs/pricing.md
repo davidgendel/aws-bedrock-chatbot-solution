@@ -31,10 +31,10 @@
 Monitor and control costs:
 ```bash
 # Check current usage
-./vector_manager.sh stats
+./chatbot vector stats
 
 # Optimize to reduce costs
-./vector_manager.sh optimize chatbot-document-vectors
+./chatbot vector optimize
 ```
 
 For detailed cost breakdown, see [cost-analysis.md](cost-analysis.md).

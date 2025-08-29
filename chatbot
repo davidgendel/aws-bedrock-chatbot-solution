@@ -1,0 +1,3 @@
+#!/bin/bash
+# Simple alias script for the chatbot CLI
+python3 scripts/chatbot_cli.py "$@"

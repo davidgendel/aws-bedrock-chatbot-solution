@@ -205,7 +205,7 @@ class ErrorAnalyzer:
                 "Try running with 'sudo' if appropriate",
                 "Check file permissions with 'ls -la'",
                 "Ensure you own the files: 'sudo chown -R $USER:$USER .'",
-                "Make scripts executable: 'chmod +x deploy.sh'"
+                "Make scripts executable: 'chmod +x chatbot'"
             ]
     
     def _get_command_solutions(self) -> List[str]:

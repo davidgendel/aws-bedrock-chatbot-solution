@@ -10,13 +10,13 @@ This project has multiple requirements files for different purposes. Here's when
 
 #### **`lambda_layer/requirements.txt`**
 - **Purpose**: Lambda layer dependencies (automatic)
-- **Usage**: Handled automatically by `./deploy.sh`
+- **Usage**: Handled automatically by `./chatbot`
 - **Contents**: numpy, structlog, cachetools
 - **Action**: ❌ **DO NOT install manually**
 
 #### **`layers/boto3-layer/`**
 - **Purpose**: boto3 layer (automatic)
-- **Usage**: Handled automatically by `./deploy.sh`
+- **Usage**: Handled automatically by `./chatbot`
 - **Contents**: boto3, botocore, s3transfer
 - **Action**: ❌ **DO NOT install manually**
 
@@ -39,7 +39,7 @@ This project has multiple requirements files for different purposes. Here's when
 #### **`requirements.txt`**
 - **Purpose**: Main project dependencies (reference)
 - **Usage**: ❌ **DO NOT install manually**
-- **When**: Used by CDK/deploy.sh internally
+- **When**: Used by CD./chatbot internally
 - **Contents**: boto3, CDK, numpy, scipy, etc.
 
 #### **`requirements-local.txt`**
@@ -53,7 +53,7 @@ This project has multiple requirements files for different purposes. Here's when
 ### **For Normal Users (Just Deploy)**
 ```bash
 # Deploy the chatbot (no pip install needed)
-./deploy.sh deploy
+./chatbot deploy
 ```
 
 ### **For Document Processing (Local Scripts)**
@@ -78,27 +78,27 @@ python3 run_tests.py
 
 1. **DON'T** run `pip install -r requirements.txt` (not needed for deployment)
 2. **DON'T** run `pip install -r lambda_layer/requirements.txt` (automatic)
-3. **DON'T** install dependencies before deployment (deploy.sh handles it)
+3. **DON'T** install dependencies before deployment (./chatbot handles it)
 
 ## **✅ Correct Usage Summary**
 
 | Task | Command | When |
 |------|---------|------|
-| **Deploy chatbot** | `./deploy.sh deploy` | Always |
+| **Deploy chatbot** | `./chatbot deploy` | Always |
 | **Process documents locally** | `pip install -r scripts/requirements.txt` | Optional |
 | **Develop/test code** | `pip install -r requirements-dev.txt` | Developers only |
-| **Check status** | `./deploy.sh status` | After deployment |
+| **Check status** | `./chatbot status` | After deployment |
 
 ## **🔍 Troubleshooting**
 
 **Q: Should I install requirements.txt?**
-A: No, `./deploy.sh` handles all deployment dependencies automatically.
+A: No, `./chatbot` handles all deployment dependencies automatically.
 
 **Q: I want to process documents locally, what do I install?**
 A: `pip install -r scripts/requirements.txt`
 
 **Q: I'm getting import errors during deployment**
-A: Don't install anything manually. Run `./deploy.sh deploy` - it handles all dependencies.
+A: Don't install anything manually. Run `./chatbot deploy` - it handles all dependencies.
 
 **Q: Which Python version?**
 A: Python 3.12+ required. Lambda uses Python 3.12.

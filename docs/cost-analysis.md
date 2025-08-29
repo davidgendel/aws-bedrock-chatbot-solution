@@ -51,13 +51,13 @@ This document explains the costs for running the RAG Chatbot solution.
 ### Monitor Your Usage
 ```bash
 # Check current usage and costs
-./vector_manager.sh stats
+./chatbot vector stats
 ```
 
 ### Optimize Performance
 ```bash
 # Run weekly to maintain efficiency
-./vector_manager.sh optimize chatbot-document-vectors
+./chatbot vector optimize
 ```
 
 ### Control Costs

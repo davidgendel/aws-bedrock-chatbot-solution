@@ -19,7 +19,7 @@ See the [Deployment Guide](../DEPLOYMENT.md) for complete setup instructions.
 ```bash
 git clone https://github.com/your-github-username/aws-bedrock-chatbot-solution.git
 cd aws-bedrock-chatbot-solution
-./deploy.sh deploy
+./chatbot deploy
 ```
 
 ## 📚 Add Your Documents
@@ -87,16 +87,16 @@ Edit `config.json` to customize:
 ### Weekly Tasks
 ```bash
 # Optimize performance (recommended weekly)
-./vector_manager.sh optimize chatbot-document-vectors
+./chatbot vector optimize
 ```
 
 ### Check Status
 ```bash
 # View deployment status
-./deploy.sh status
+./chatbot status
 
 # Check performance statistics
-./vector_manager.sh stats
+./chatbot vector stats
 ```
 
 ### Add More Documents
@@ -110,7 +110,7 @@ python3 scripts/process_documents_locally.py --file ./documents/new-document.pdf
 
 ### Check Current Usage
 ```bash
-./vector_manager.sh stats
+./chatbot vector stats
 ```
 
 ### Expected Monthly Costs
@@ -122,9 +122,9 @@ python3 scripts/process_documents_locally.py --file ./documents/new-document.pdf
 
 ### Deployment Failed
 ```bash
-./deploy.sh status    # Check what happened
-./deploy.sh rollback  # Remove failed deployment
-./deploy.sh deploy    # Try again
+./chatbot status    # Check what happened
+./chatbot rollback  # Remove failed deployment
+./chatbot deploy    # Try again
 ```
 
 ### Chatbot Not Responding
@@ -136,20 +136,20 @@ python3 scripts/process_documents_locally.py --file ./documents/new-document.pdf
 ### High Costs
 ```bash
 # Check usage patterns
-./vector_manager.sh stats
+./chatbot vector stats
 
 # Optimize to reduce costs
-./vector_manager.sh optimize chatbot-document-vectors
+./chatbot vector optimize
 ```
 
 ## 🗑️ Remove Chatbot
 
 ```bash
 # Complete removal
-./deploy.sh rollback
+./chatbot rollback
 
 # Clean up storage if needed
-./deploy.sh cleanup-s3
+./chatbot cleanup --s3-only
 ```
 
 ## 📞 Get Help
@@ -404,7 +404,7 @@ python3 scripts/cleanup_vectors.py --days 90
 python3 scripts/manage_vector_indexes.py --optimize
 
 # 3. Check system health
-./deploy.sh status
+./chatbot status
 
 # 4. Update dependencies (if needed)
 # Only needed for local script usage
@@ -496,9 +496,9 @@ print('Memory after GC:', psutil.Process().memory_info().rss / 1024 / 1024, 'MB'
 
 ### Deployment Failed
 ```bash
-./deploy.sh status    # Check what happened
-./deploy.sh rollback  # Remove failed deployment
-./deploy.sh deploy    # Try again
+./chatbot status    # Check what happened
+./chatbot rollback  # Remove failed deployment
+./chatbot deploy    # Try again
 ```
 
 ### Chatbot Not Responding
@@ -510,20 +510,20 @@ print('Memory after GC:', psutil.Process().memory_info().rss / 1024 / 1024, 'MB'
 ### High Costs
 ```bash
 # Check usage patterns
-./vector_manager.sh stats
+./chatbot vector stats
 
 # Optimize to reduce costs
-./vector_manager.sh optimize chatbot-document-vectors
+./chatbot vector optimize
 ```
 
 ## 🗑️ Remove Chatbot
 
 ```bash
 # Complete removal
-./deploy.sh rollback
+./chatbot rollback
 
 # Clean up storage if needed
-./deploy.sh cleanup-s3
+./chatbot cleanup --s3-only
 ```
 
 ## 📞 Get Help
@@ -537,7 +537,7 @@ For additional help, refer to the [FAQ](faq.md), [Troubleshooting Guide](trouble
 1. Edit the `config.json` file to set your preferences
 2. Run the deployment script:
    ```bash
-   ./deploy.sh
+   ./chatbot
    ```
 
 ### Verifying Deployment

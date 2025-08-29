@@ -7,10 +7,10 @@ This guide provides solutions for common issues you might encounter during deplo
 ### Deployment Failed Completely
 ```bash
 # Try these commands in order:
-./deploy.sh status         # Check current deployment status
-./deploy.sh rollback       # Rollback deployment
-./deploy.sh cleanup-s3     # Empty S3 buckets if needed
-./deploy.sh deploy         # Run full deployment again
+./chatbot status         # Check current deployment status
+./chatbot rollback       # Rollback deployment
+./chatbot cleanup --s3-only     # Empty S3 buckets if needed
+./chatbot deploy         # Run full deployment again
 ```
 
 ### Chatbot Not Working on Website
@@ -112,7 +112,7 @@ This guide provides solutions for common issues you might encounter during deplo
   brew install jq          # macOS
   
   # Then retry atomic deployment
-  ./deploy.sh deploy
+  ./chatbot deploy
   ```
 
 **Issue**: "Deployment stuck in progress"
@@ -126,7 +126,7 @@ This guide provides solutions for common issues you might encounter during deplo
   aws cloudformation cancel-update-stack --stack-name ChatbotRagStack
   
   # Wait for cancellation, then retry
-  ./deploy.sh deploy
+  ./chatbot deploy
   ```
 
 **Issue**: "Rollback failed"
@@ -140,7 +140,7 @@ This guide provides solutions for common issues you might encounter during deplo
   aws cloudformation delete-stack --stack-name ChatbotRagStack
   
   # Wait for deletion, then redeploy
-  ./deploy.sh deploy
+  ./chatbot deploy
   ```
 
 ### CDK Bootstrap Issues
@@ -182,14 +182,14 @@ This guide provides solutions for common issues you might encounter during deplo
 - **Solution**:
   ```bash
   # Check deployment status
-  ./deploy.sh status
+  ./chatbot status
   
   # If deployment completed, check vector indexes
-  ./vector_manager.sh list
+  ./chatbot vector list
   
   # If no indexes found, redeploy
-  ./deploy.sh rollback
-  ./deploy.sh deploy
+  ./chatbot rollback
+  ./chatbot deploy
   ```
 
 **Issue**: "Vector similarity search slow"
@@ -197,10 +197,10 @@ This guide provides solutions for common issues you might encounter during deplo
 - **Solution**:
   ```bash
   # Optimize vector index (run weekly)
-  ./vector_manager.sh optimize chatbot-document-vectors
+  ./chatbot vector optimize
   
   # Check performance statistics
-  ./vector_manager.sh stats
+  ./chatbot vector stats
   ```
 **Issue**: "Document processing failed"
 - **Cause**: Unsupported file format or file too large
@@ -220,10 +220,10 @@ This guide provides solutions for common issues you might encounter during deplo
 - **Solution**:
   ```bash
   # Optimize vector index (recommended weekly)
-  ./vector_manager.sh optimize chatbot-document-vectors
+  ./chatbot vector optimize
   
   # Check performance statistics
-  ./vector_manager.sh stats
+  ./chatbot vector stats
   
   # Wait 5-10 minutes after deployment for system to warm up
   ```
@@ -233,10 +233,10 @@ This guide provides solutions for common issues you might encounter during deplo
 - **Solution**:
   ```bash
   # Check cost statistics
-  ./vector_manager.sh stats
+  ./chatbot vector stats
   
   # Optimize vector index to reduce costs
-  ./vector_manager.sh optimize chatbot-document-vectors
+  ./chatbot vector optimize
   
   # Review AWS CloudWatch for usage patterns
   ```
@@ -255,8 +255,8 @@ This guide provides solutions for common issues you might encounter during deplo
 - **Solution**:
   ```bash
   # Redeploy to fix CORS configuration
-  ./deploy.sh rollback
-  ./deploy.sh deploy
+  ./chatbot rollback
+  ./chatbot deploy
   ```
   ```
 
@@ -406,7 +406,7 @@ python3 scripts/recovery_manager.py --analyze --suggest
    echo "Region: $(aws configure get region)"
    
    # Check deployment status
-   ./deploy.sh status
+   ./chatbot status
    
    # Get recent logs
    tail -50 deployment.log
