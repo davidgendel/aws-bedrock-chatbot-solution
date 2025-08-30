@@ -480,6 +480,8 @@ def handler(event, context):
         lambda_role.add_to_policy(
             iam.PolicyStatement(
                 actions=[
+                    "s3vectors:CreateVectorBucket", # Required for vector bucket creation
+                    "s3vectors:DeleteVectorBucket", # Required for vector bucket deletion
                     "s3vectors:GetVectorBucket",
                     "s3vectors:CreateIndex",      # Used in operational functions
                     "s3vectors:DeleteIndex",      # Used in delete_vector_index()
@@ -786,38 +788,31 @@ def handler(event, context):
 
     def _create_cloudfront_distribution(self) -> cloudfront.Distribution:
         """Create CloudFront distribution for website assets."""
+        # Create Origin Access Control
+        oac = cloudfront.OriginAccessControl(
+            self, "WebsiteOAC",
+            description="OAC for chatbot website S3 bucket",
+            origin_access_control_origin_type=cloudfront.OriginAccessControlOriginType.S3,
+            signing_behavior=cloudfront.OriginAccessControlSigningBehavior.ALWAYS,
+            signing_protocol=cloudfront.OriginAccessControlSigningProtocol.SIGV4,
+        )
+
+        # Create single S3 origin with OAC
+        s3_origin = origins.S3BucketOrigin(
+            bucket=self.s3_buckets["website_bucket"],
+            origin_access_control=oac
+        )
+
         distribution = cloudfront.Distribution(
             self, "ChatbotDistribution",
             default_behavior=cloudfront.BehaviorOptions(
-                origin=origins.S3BucketOrigin(
-                    bucket=self.s3_buckets["website_bucket"]
-                ),
+                origin=s3_origin,
                 viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
                 cache_policy=cloudfront.CachePolicy.CACHING_OPTIMIZED,
                 allowed_methods=cloudfront.AllowedMethods.ALLOW_GET_HEAD,
                 cached_methods=cloudfront.CachedMethods.CACHE_GET_HEAD,
                 compress=True,
             ),
-            additional_behaviors={
-                # Cache JavaScript files longer
-                "*.js": cloudfront.BehaviorOptions(
-                    origin=origins.S3BucketOrigin(
-                        bucket=self.s3_buckets["website_bucket"]
-                    ),
-                    viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-                    cache_policy=cloudfront.CachePolicy.CACHING_OPTIMIZED,
-                    compress=True,
-                ),
-                # Cache HTML files with shorter TTL
-                "*.html": cloudfront.BehaviorOptions(
-                    origin=origins.S3BucketOrigin(
-                        bucket=self.s3_buckets["website_bucket"]
-                    ),
-                    viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-                    cache_policy=cloudfront.CachePolicy.CACHING_DISABLED,  # Don't cache HTML for updates
-                    compress=True,
-                ),
-            },
             default_root_object="index.html",
             error_responses=[
                 cloudfront.ErrorResponse(
