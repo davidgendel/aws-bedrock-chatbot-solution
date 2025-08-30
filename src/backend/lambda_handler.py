@@ -14,7 +14,7 @@ import boto3
 # Handle imports for both Lambda and local environments
 try:
     # Try relative imports first (for local development)
-    from .aws_utils import get_aws_region
+    from .aws_utils import get_aws_region, get_aws_client
     from .bedrock_utils import (
         apply_guardrails, generate_embeddings, generate_response, cached_apply_guardrails,
         generate_cached_response, get_cached_context, cache_context
@@ -34,7 +34,7 @@ try:
     from .validation import validate_input, validate_websocket_input
 except ImportError:
     # Fall back to absolute imports (for Lambda environment)
-    from aws_utils import get_aws_region
+    from aws_utils import get_aws_region, get_aws_client
     from bedrock_utils import (
         apply_guardrails, generate_embeddings, generate_response, cached_apply_guardrails,
         generate_cached_response, get_cached_context, cache_context

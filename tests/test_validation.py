@@ -125,7 +125,7 @@ class TestValidateWebsocketInput:
         body = {"message": "Hello"}
         is_valid, errors = validate_websocket_input(body, "unknownAction")
         assert is_valid is False
-        assert "Unknown action" in errors
+        assert "Unknown action: unknownAction" in errors
 
     def test_heartbeat_action(self):
         """Test validation for heartbeat action."""

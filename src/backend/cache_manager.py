@@ -52,6 +52,18 @@ class CacheManager:
         self.config_cache = TTLCache(maxsize=10, ttl=7200)  # 2 hours TTL
         self.config_lock = threading.RLock()
         
+        # Prompt cache - for Bedrock prompt responses
+        self.prompt_cache = TTLCache(maxsize=500, ttl=3600)  # 1 hour TTL
+        self.prompt_lock = threading.RLock()
+        
+        # Context cache - for retrieved document context
+        self.context_cache = TTLCache(maxsize=300, ttl=3600)  # 1 hour TTL
+        self.context_lock = threading.RLock()
+        
+        # Guardrail cache - for guardrail results
+        self.guardrail_cache = TTLCache(maxsize=200, ttl=3600)  # 1 hour TTL
+        self.guardrail_lock = threading.RLock()
+        
         # Cache statistics
         self.stats = {
             CacheType.RESPONSE: {"hits": 0, "misses": 0},
@@ -59,12 +71,15 @@ class CacheManager:
             CacheType.EMBEDDING: {"hits": 0, "misses": 0},
             CacheType.METADATA: {"hits": 0, "misses": 0},
             CacheType.CONFIG: {"hits": 0, "misses": 0},
+            CacheType.PROMPT: {"hits": 0, "misses": 0},
+            CacheType.CONTEXT: {"hits": 0, "misses": 0},
+            CacheType.GUARDRAIL: {"hits": 0, "misses": 0},
         }
         
-        # Sensitive data patterns to never cache
+        # Sensitive data patterns to never cache (specific patterns for security)
         self.sensitive_patterns = [
-            'credential', 'password', 'secret', 'token', 'key', 'auth',
-            'private', 'confidential', 'ssn', 'credit', 'card'
+            'password', 'secret_key', 'api_key', 'credential', 'private_data',
+            'confidential', 'auth_token', 'access_key', 'ssn', 'credit_card'
         ]
     
     def _get_cache_and_lock(self, cache_type: CacheType) -> Tuple[Union[TTLCache, LRUCache], threading.RLock]:
@@ -75,6 +90,9 @@ class CacheManager:
             CacheType.EMBEDDING: (self.embedding_cache, self.embedding_lock),
             CacheType.METADATA: (self.metadata_cache, self.metadata_lock),
             CacheType.CONFIG: (self.config_cache, self.config_lock),
+            CacheType.PROMPT: (self.prompt_cache, self.prompt_lock),
+            CacheType.CONTEXT: (self.context_cache, self.context_lock),
+            CacheType.GUARDRAIL: (self.guardrail_cache, self.guardrail_lock),
         }
         return cache_map[cache_type]
     
@@ -107,13 +125,13 @@ class CacheManager:
         Returns:
             Cached value or None if not found
         """
-        cache_key = self._generate_cache_key(cache_type, key_data)
-        if not cache_key:
-            return None
-        
-        cache, lock = self._get_cache_and_lock(cache_type)
-        
         try:
+            cache_key = self._generate_cache_key(cache_type, key_data)
+            if not cache_key:
+                return None
+            
+            cache, lock = self._get_cache_and_lock(cache_type)
+            
             with lock:
                 value = cache.get(cache_key)
                 if value is not None:
@@ -126,7 +144,8 @@ class CacheManager:
                     return None
         except Exception as e:
             logger.error(f"Error getting from cache: {e}")
-            self.stats[cache_type]["misses"] += 1
+            if cache_type in self.stats:
+                self.stats[cache_type]["misses"] += 1
             return None
     
     def set(self, cache_type: CacheType, key_data: Union[str, Dict, List], value: Any, ttl_override: Optional[int] = None) -> bool:
@@ -142,13 +161,13 @@ class CacheManager:
         Returns:
             True if successfully cached, False otherwise
         """
-        cache_key = self._generate_cache_key(cache_type, key_data)
-        if not cache_key:
-            return False
-        
-        cache, lock = self._get_cache_and_lock(cache_type)
-        
         try:
+            cache_key = self._generate_cache_key(cache_type, key_data)
+            if not cache_key:
+                return False
+            
+            cache, lock = self._get_cache_and_lock(cache_type)
+            
             with lock:
                 # For TTL caches, we can set custom TTL if supported
                 if isinstance(cache, TTLCache) and ttl_override:
@@ -159,6 +178,8 @@ class CacheManager:
                 logger.debug(f"Cached value for {cache_type.value}: {cache_key[:20]}...")
                 return True
         except Exception as e:
+            logger.error(f"Error setting cache: {e}")
+            return False
             logger.error(f"Error setting cache: {e}")
             return False
     
@@ -173,13 +194,13 @@ class CacheManager:
         Returns:
             True if successfully deleted, False otherwise
         """
-        cache_key = self._generate_cache_key(cache_type, key_data)
-        if not cache_key:
-            return False
-        
-        cache, lock = self._get_cache_and_lock(cache_type)
-        
         try:
+            cache_key = self._generate_cache_key(cache_type, key_data)
+            if not cache_key:
+                return False
+            
+            cache, lock = self._get_cache_and_lock(cache_type)
+            
             with lock:
                 if cache_key in cache:
                     del cache[cache_key]
@@ -187,6 +208,8 @@ class CacheManager:
                     return True
                 return False
         except Exception as e:
+            logger.error(f"Error deleting from cache: {e}")
+            return False
             logger.error(f"Error deleting from cache: {e}")
             return False
     

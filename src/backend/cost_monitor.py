@@ -438,7 +438,9 @@ class CostMonitor:
     def _calculate_token_cost(self, input_tokens: int, output_tokens: int, model_id: str) -> float:
         """Calculate cost based on token usage."""
         try:
-            model_pricing = self.pricing.get(model_id, {})
+            # Strip version suffix from model ID (e.g., 'amazon.nova-lite-v1:0' -> 'amazon.nova-lite-v1')
+            base_model_id = model_id.split(':')[0]
+            model_pricing = self.pricing.get(base_model_id, {})
             
             input_cost = (input_tokens / 1000) * model_pricing.get('input_tokens_per_1k', 0)
             output_cost = (output_tokens / 1000) * model_pricing.get('output_tokens_per_1k', 0)

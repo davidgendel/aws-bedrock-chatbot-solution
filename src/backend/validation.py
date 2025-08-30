@@ -71,24 +71,24 @@ def validate_websocket_input(body: Dict, action: str) -> Tuple[bool, List[str]]:
             errors.append("Message cannot be empty")
         elif len(body["message"]) > MAX_TOKEN_LENGTH:
             errors.append(f"Message too long (maximum {MAX_TOKEN_LENGTH} characters)")
-        
-        # Validate message content
-        trimmed_message = body["message"].strip()
-        if len(trimmed_message) < 1:
-            errors.append("Message must contain at least 1 character")
-        
-        # Check for potentially malicious content
-        suspicious_patterns = [
-            r"<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>",
-            r"javascript:",
-            r"on\w+\s*=",
-            r"data:text\/html"
-        ]
-        
-        for pattern in suspicious_patterns:
-            if re.search(pattern, trimmed_message, re.IGNORECASE):
-                errors.append("Message contains potentially unsafe content")
-                break
+        else:
+            # Validate message content only if message exists and is valid
+            trimmed_message = body["message"].strip()
+            if len(trimmed_message) < 1:
+                errors.append("Message must contain at least 1 character")
+            
+            # Check for potentially malicious content
+            suspicious_patterns = [
+                r"<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>",
+                r"javascript:",
+                r"on\w+\s*=",
+                r"data:text\/html"
+            ]
+            
+            for pattern in suspicious_patterns:
+                if re.search(pattern, trimmed_message, re.IGNORECASE):
+                    errors.append("Message contains potentially unsafe content")
+                    break
     
     elif action == "heartbeat":
         # Heartbeat doesn't require additional validation

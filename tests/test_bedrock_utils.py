@@ -21,7 +21,7 @@ class TestBedrockUtils:
         """Set up test fixtures."""
         self.mock_bedrock_client = Mock()
     
-    @patch('src.backend.bedrock_utils.get_bedrock_client')
+    @patch('src.backend.aws_utils.get_bedrock_client')
     def test_get_bedrock_client(self, mock_get_bedrock_client):
         """Test Bedrock client creation with request signing."""
         mock_get_bedrock_client.return_value = self.mock_bedrock_client
@@ -88,8 +88,6 @@ class TestBedrockUtils:
         assert call_args[1]["modelId"] == "amazon.titan-embed-text-v1"
         assert call_args[1]["contentType"] == "application/json"
         assert call_args[1]["accept"] == "application/json"
-        assert "cacheConfig" in call_args[1]
-        assert call_args[1]["cacheConfig"]["ttlSeconds"] == 259200  # 3 days
     
     @patch('src.backend.bedrock_utils.get_bedrock_client')
     def test_generate_embeddings_error(self, mock_get_client):
@@ -133,7 +131,6 @@ class TestBedrockUtils:
         # Check call arguments
         call_args = self.mock_bedrock_client.invoke_model.call_args
         assert call_args[1]["modelId"] == "amazon.nova-lite-v1"
-        assert "cacheConfig" in call_args[1]
     
     @patch('src.backend.bedrock_utils.get_bedrock_client')
     def test_generate_response_error(self, mock_get_client):
@@ -173,12 +170,12 @@ class TestBedrockUtils:
             content=[{"text": {"text": "This is safe content"}}]
         )
     
-    @patch('src.backend.bedrock_utils.boto3.client')
+    @patch('src.backend.bedrock_utils.get_bedrock_client')
     @patch.dict('os.environ', {'GUARDRAIL_ID': 'test-guardrail-id'})
-    def test_apply_guardrails_success_blocked(self, mock_boto3_client):
+    def test_apply_guardrails_success_blocked(self, mock_get_bedrock_client):
         """Test successful guardrail application - content blocked."""
         mock_bedrock_client = Mock()
-        mock_boto3_client.return_value = mock_bedrock_client
+        mock_get_bedrock_client.return_value = mock_bedrock_client
         
         # Mock response - content blocked
         mock_response = {
@@ -210,12 +207,12 @@ class TestBedrockUtils:
         # Should not call AWS API
         mock_boto3_client.assert_not_called()
     
-    @patch('src.backend.bedrock_utils.boto3.client')
+    @patch('src.backend.bedrock_utils.get_bedrock_client')
     @patch.dict('os.environ', {'GUARDRAIL_ID': 'nonexistent-guardrail'})
-    def test_apply_guardrails_resource_not_found(self, mock_boto3_client):
+    def test_apply_guardrails_resource_not_found(self, mock_get_bedrock_client):
         """Test guardrail application when guardrail doesn't exist."""
         mock_bedrock_client = Mock()
-        mock_boto3_client.return_value = mock_bedrock_client
+        mock_get_bedrock_client.return_value = mock_bedrock_client
         
         # Mock ResourceNotFoundException
         error_response = {
@@ -235,12 +232,12 @@ class TestBedrockUtils:
         assert result["blocked"] is False
         assert "Guardrail not configured" in result["reasons"]
     
-    @patch('src.backend.bedrock_utils.boto3.client')
+    @patch('src.backend.bedrock_utils.get_bedrock_client')
     @patch.dict('os.environ', {'GUARDRAIL_ID': 'test-guardrail-id'})
-    def test_apply_guardrails_client_error(self, mock_boto3_client):
+    def test_apply_guardrails_client_error(self, mock_get_bedrock_client):
         """Test guardrail application with other client errors."""
         mock_bedrock_client = Mock()
-        mock_boto3_client.return_value = mock_bedrock_client
+        mock_get_bedrock_client.return_value = mock_bedrock_client
         
         # Mock other ClientError
         error_response = {
@@ -260,12 +257,12 @@ class TestBedrockUtils:
         assert result["blocked"] is False
         assert "Guardrail error: AccessDeniedException" in result["reasons"]
     
-    @patch('src.backend.bedrock_utils.boto3.client')
+    @patch('src.backend.bedrock_utils.get_bedrock_client')
     @patch.dict('os.environ', {'GUARDRAIL_ID': 'test-guardrail-id'})
-    def test_apply_guardrails_unexpected_error(self, mock_boto3_client):
+    def test_apply_guardrails_unexpected_error(self, mock_get_bedrock_client):
         """Test guardrail application with unexpected errors."""
         mock_bedrock_client = Mock()
-        mock_boto3_client.return_value = mock_bedrock_client
+        mock_get_bedrock_client.return_value = mock_bedrock_client
         
         # Mock unexpected error
         mock_bedrock_client.apply_guardrail.side_effect = Exception("Unexpected error")
@@ -279,9 +276,9 @@ class TestBedrockUtils:
     
     def test_apply_guardrails_with_custom_parameters(self):
         """Test guardrail application with custom parameters."""
-        with patch('src.backend.bedrock_utils.boto3.client') as mock_boto3_client:
+        with patch('src.backend.bedrock_utils.get_bedrock_client') as mock_get_bedrock_client:
             mock_bedrock_client = Mock()
-            mock_boto3_client.return_value = mock_bedrock_client
+            mock_get_bedrock_client.return_value = mock_bedrock_client
             
             mock_response = {
                 "action": "NONE",

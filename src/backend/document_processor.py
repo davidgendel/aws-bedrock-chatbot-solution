@@ -13,20 +13,36 @@ from typing import Any, Dict, List, Optional
 import boto3
 from botocore.exceptions import ClientError
 
-from .bedrock_utils import generate_embeddings
-from .aws_utils import get_aws_region
-from .chunking import create_chunks
-from .document_utils import extract_text_from_document
-from .error_handler import (
-    handle_error, create_error_response, create_success_response,
-    ChatbotError, DatabaseError, BedrockError, ValidationError
-)
-from .s3_vector_utils import (
-    create_vector_index,
-    store_document_vectors,
-    store_document_metadata,
-    delete_document_vectors
-)
+try:
+    from .bedrock_utils import generate_embeddings
+    from .aws_utils import get_aws_region
+    from .chunking import create_chunks
+    from .document_utils import extract_text_from_document
+    from .error_handler import (
+        handle_error, create_error_response, create_success_response,
+        ChatbotError, DatabaseError, BedrockError, ValidationError
+    )
+    from .s3_vector_utils import (
+        create_vector_index,
+        store_document_vectors,
+        store_document_metadata,
+        delete_document_vectors
+    )
+except ImportError:
+    from bedrock_utils import generate_embeddings
+    from aws_utils import get_aws_region
+    from chunking import create_chunks
+    from document_utils import extract_text_from_document
+    from error_handler import (
+        handle_error, create_error_response, create_success_response,
+        ChatbotError, DatabaseError, BedrockError, ValidationError
+    )
+    from s3_vector_utils import (
+        create_vector_index,
+        store_document_vectors,
+        store_document_metadata,
+        delete_document_vectors
+    )
 
 # Configure logging
 logging.basicConfig(

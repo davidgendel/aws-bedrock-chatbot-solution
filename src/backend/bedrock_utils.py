@@ -457,9 +457,9 @@ def apply_guardrails(text: str, guardrail_id: Optional[str] = None, guardrail_ve
     """
     try:
         # Get guardrail configuration from environment if not provided
-        if not guardrail_id:
+        if guardrail_id is None:
             guardrail_id = os.environ.get("GUARDRAIL_ID")
-        if not guardrail_version:
+        if guardrail_version is None:
             guardrail_version = os.environ.get("GUARDRAIL_VERSION")
         
         # If no guardrail configured, return unblocked
@@ -495,7 +495,12 @@ def apply_guardrails(text: str, guardrail_id: Optional[str] = None, guardrail_ve
         if blocked and "outputs" in response:
             for output in response["outputs"]:
                 if "text" in output:
-                    reasons.append(output["text"])
+                    # Handle both direct text and nested text structure
+                    text_content = output["text"]
+                    if isinstance(text_content, dict) and "text" in text_content:
+                        reasons.append(text_content["text"])
+                    else:
+                        reasons.append(text_content)
         
         return {
             "blocked": blocked,
@@ -524,7 +529,7 @@ def apply_guardrails(text: str, guardrail_id: Optional[str] = None, guardrail_ve
         # In case of error, allow content but log the issue
         return {
             "blocked": False,
-            "reasons": ["Guardrail system temporarily unavailable"]
+            "reasons": [f"Guardrail system error: {e}"]
         }
 
 

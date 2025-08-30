@@ -42,27 +42,43 @@ def ensure_nltk_resources():
 ensure_nltk_resources()
 
 
-def create_chunks(extracted_content: Dict[str, Any]) -> List[Dict[str, Any]]:
+def create_chunks(
+    content, 
+    metadata: Dict[str, Any] = None, 
+    max_chunk_size: int = None, 
+    overlap_size: int = None
+) -> List[Dict[str, Any]]:
     """
     Create chunks using advanced chunking strategies.
     
     Args:
-        extracted_content: Extracted document content
+        content: Either extracted content dict or text string
+        metadata: Document metadata (optional)
+        max_chunk_size: Maximum chunk size override (optional)
+        overlap_size: Overlap size override (optional)
         
     Returns:
         List of document chunks
     """
-    text = extracted_content["text"]
-    structure = extracted_content.get("structure", [])
-    metadata = extracted_content.get("metadata", {})
+    # Handle both calling patterns
+    if isinstance(content, dict):
+        # New pattern: extracted_content dict
+        text = content["text"]
+        structure = content.get("structure", [])
+        metadata = content.get("metadata", metadata or {})
+    else:
+        # Legacy pattern: text string with separate metadata
+        text = content
+        structure = []
+        metadata = metadata or {}
     
     # Configuration for chunking
     config = {
-        "targetChunkSize": DEFAULT_CHUNK_SIZE,     # Target size for each chunk in characters
-        "maxChunkSize": MAX_CHUNK_SIZE,        # Maximum size for any chunk
-        "minChunkSize": MIN_CHUNK_SIZE,         # Minimum size for any chunk
-        "overlapSize": CHUNK_OVERLAP_SIZE,          # Number of characters to overlap between chunks
-        "sentenceEndingChars": ['.', '!', '?', '\n\n']  # Characters that indicate good break points
+        "targetChunkSize": DEFAULT_CHUNK_SIZE,
+        "maxChunkSize": max_chunk_size or MAX_CHUNK_SIZE,
+        "minChunkSize": MIN_CHUNK_SIZE,
+        "overlapSize": overlap_size or CHUNK_OVERLAP_SIZE,
+        "sentenceEndingChars": ['.', '!', '?', '\n\n']
     }
     
     # If we have structure information, use it for semantic chunking

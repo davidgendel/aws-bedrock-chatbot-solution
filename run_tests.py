@@ -22,7 +22,7 @@ def run_tests(test_type="all", verbose=False, coverage=True):
     os.chdir(project_root)
     
     # Base pytest command
-    cmd = ["python", "-m", "pytest"]
+    cmd = ["python3", "-m", "pytest"]
     
     # Add test type filter
     if test_type == "unit":
