@@ -553,7 +553,6 @@ def handler(event, context):
                         "find /asset-output -name '*.pyc' -delete && "
                         "find /asset-output -name '__pycache__' -type d -exec rm -rf {} + || true"
                     ],
-                    user="root",
                 )
             ),
             compatible_runtimes=[lambda_.Runtime.PYTHON_3_12],
@@ -574,7 +573,6 @@ def handler(event, context):
                         "find /asset-output -name '*.pyc' -delete && "
                         "find /asset-output -name '__pycache__' -type d -exec rm -rf {} + || true"
                     ],
-                    user="root",
                 )
             ),
             compatible_runtimes=[lambda_.Runtime.PYTHON_3_12],

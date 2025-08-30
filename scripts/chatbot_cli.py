@@ -15,9 +15,8 @@ def timeout_handler(signum, frame):
     sys.exit(1)
 
 def main():
-    # Set timeout for operations
+    # Set timeout for operations (except deploy)
     signal.signal(signal.SIGALRM, timeout_handler)
-    signal.alarm(60)  # 60 second timeout
     
     parser = argparse.ArgumentParser(description="RAG Chatbot Management CLI")
     subparsers = parser.add_subparsers(dest='command', help='Available commands')
@@ -70,6 +69,10 @@ def main():
     if not args.command:
         parser.print_help()
         return 1
+    
+    # Set timeout for non-deploy operations only
+    if args.command != 'deploy':
+        signal.alarm(60)
     
     try:
         # Import managers only when needed to avoid hanging on import

@@ -10,3 +10,6 @@ lambda_function/
 
 # Keep layer specifications
 !lambda_layer/
+
+# Generated config file
+src/frontend/widget-config.js

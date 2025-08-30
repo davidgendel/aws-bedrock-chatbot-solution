@@ -1,18 +1,38 @@
 /**
- * SmallBizChatbot - A customizable chatbot widget for small businesses
+ * A customizable chatbot widget for small organizations and small use cases - this is intended as an example of implementing a chatbot
  * 
  * This widget can be embedded into any website and customized to match the site's branding.
  */
 (function() {
   'use strict';
 
-  // Default configuration
+  // Configuration loading
+  let config = null;
+
+  async function loadConfiguration() {
+    if (config) return config;
+    
+    // Load external config file
+    return new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'widget-config.js';
+      script.onload = () => {
+        config = { ...window.ChatbotConfig };
+        resolve(config);
+      };
+      script.onerror = () => reject(new Error('Failed to load config'));
+      document.head.appendChild(script);
+    });
+  }
+
+  // Default configuration - actual values loaded from widget-config.js
   const DEFAULT_CONFIG = {
     containerId: 'chatbot-container',
-    apiEndpoint: 'https://YOUR_API_GATEWAY_ID.execute-api.YOUR_REGION.amazonaws.com/prod/', // Replace with your deployed API Gateway endpoint
-    apiKey: 'YOUR_API_GATEWAY_KEY', // Replace with your API Gateway key
-    websocketUrl: 'wss://YOUR_WEBSOCKET_API_ID.execute-api.YOUR_REGION.amazonaws.com/prod', // Replace with your WebSocket API endpoint
-    streaming: true, // Enable streaming by default
+    // Examples of the information required and that are being loaded from the config file
+    // apiEndpoint: loaded from widget-config.js (e.g., 'https://abc123.execute-api.us-east-1.amazonaws.com/prod/')
+    // websocketUrl: loaded from widget-config.js (e.g., 'wss://xyz789.execute-api.us-east-1.amazonaws.com/prod')
+    // apiKey: loaded from widget-config.js (API Gateway key for rate limiting)
+    streaming: true,
     theme: {
       primaryColor: '#4287f5',
       secondaryColor: '#f5f5f5',
@@ -257,7 +277,7 @@
     if (!text) return [];
     
     // Remove common words and punctuation
-    const stopWords = ['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'with', 'by'];
+    const stopWords = ['the', 'a', 'an', 'but', 'in', 'on', 'at', 'to', 'for', 'by'];
     const words = text.toLowerCase().match(/\b\w+\b/g) || [];
     
     // Count word frequency
@@ -1524,13 +1544,16 @@
   // =============================================================================
 
   // Initialize the widget
-  function init(userConfig = {}) {
-    // Merge user config with defaults safely
-    config = { ...DEFAULT_CONFIG, ...userConfig };
-    config.theme = { ...DEFAULT_CONFIG.theme, ...(userConfig.theme || {}) };
-    config.cache = { ...DEFAULT_CONFIG.cache, ...(userConfig.cache || {}) };
-    config.websocket = { ...DEFAULT_CONFIG.websocket, ...(userConfig.websocket || {}) };
-    config.accessibility = { ...DEFAULT_CONFIG.accessibility, ...(userConfig.accessibility || {}) };
+  async function init(userConfig = {}) {
+    // Load configuration from external file
+    const loadedConfig = await loadConfiguration();
+    
+    // Merge configs: defaults < loaded < user
+    config = { ...DEFAULT_CONFIG, ...loadedConfig, ...userConfig };
+    config.theme = { ...DEFAULT_CONFIG.theme, ...(loadedConfig.theme || {}), ...(userConfig.theme || {}) };
+    config.cache = { ...DEFAULT_CONFIG.cache, ...(loadedConfig.cache || {}), ...(userConfig.cache || {}) };
+    config.websocket = { ...DEFAULT_CONFIG.websocket, ...(loadedConfig.websocket || {}), ...(userConfig.websocket || {}) };
+    config.accessibility = { ...DEFAULT_CONFIG.accessibility, ...(loadedConfig.accessibility || {}), ...(userConfig.accessibility || {}) };
 
     // Check browser support and adjust features accordingly
     checkBrowserSupport();
