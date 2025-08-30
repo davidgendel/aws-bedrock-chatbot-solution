@@ -107,26 +107,30 @@ def handle_error(
     # Determine error type based on exception type and message
     error_type = _classify_error(error)
     
-    # Create context
+    # Create context for server-side logging only (never sent to client)
     error_context = context or {}
     error_context.update({
         "exception_type": type(error).__name__,
         "traceback": traceback.format_exc()
     })
     
+    # Create user-friendly message (never expose technical details)
+    user_message = _get_user_friendly_message(error_type)
+    
     # Create standardized error
     chatbot_error = ChatbotError(
-        message=str(error),
+        message=user_message,  # Use friendly message, not raw error
         error_type=error_type,
         original_error=error,
         context=error_context
     )
     
-    # Log the error
+    # Log the error with full technical details (server-side only)
     logger.log(log_level, f"[{error_type.value}] {str(error)}", extra={
         "error_type": error_type.value,
         "context": error_context,
-        "original_error": str(error)
+        "original_error": str(error),
+        "traceback": traceback.format_exc()
     })
     
     return chatbot_error
@@ -187,11 +191,14 @@ def create_error_response(
     if status_code is None:
         status_code = _get_status_code_for_error_type(error.error_type)
     
+    # Create user-friendly error message (never expose technical details)
+    user_message = _get_user_friendly_message(error.error_type)
+    
     error_response = {
         "success": False,
         "error": {
             "type": error.error_type.value,
-            "message": error.message,
+            "message": user_message,
             "code": status_code,
             "timestamp": error.timestamp
         }
@@ -201,13 +208,7 @@ def create_error_response(
     if request_id:
         error_response["error"]["requestId"] = request_id
     
-    # Add context in development/debug mode (be careful not to expose sensitive data)
-    if logger.isEnabledFor(logging.DEBUG) and error.context:
-        # Filter out sensitive information
-        safe_context = {k: v for k, v in error.context.items() 
-                       if not any(sensitive in k.lower() for sensitive in ['password', 'secret', 'token', 'key'])}
-        if safe_context:
-            error_response["error"]["context"] = safe_context
+    # Never expose context, traceback, or technical details to clients
     
     return {
         "statusCode": status_code,
@@ -215,8 +216,26 @@ def create_error_response(
             "Content-Type": "application/json",
             "Access-Control-Allow-Origin": "*"
         },
-        "body": error_response
+        "body": json.dumps(error_response)
     }
+
+
+def _get_user_friendly_message(error_type: ErrorType) -> str:
+    """Get user-friendly error message that doesn't expose technical details."""
+    friendly_messages = {
+        ErrorType.VALIDATION_ERROR: "Please check your input and try again.",
+        ErrorType.AUTHENTICATION_ERROR: "Authentication failed. Please check your credentials.",
+        ErrorType.AUTHORIZATION_ERROR: "You don't have permission to perform this action.",
+        ErrorType.RATE_LIMIT_ERROR: "Too many requests. Please wait a moment and try again.",
+        ErrorType.DATABASE_ERROR: "We're experiencing technical difficulties. Please try again later.",
+        ErrorType.BEDROCK_ERROR: "AI service is temporarily unavailable. Please try again later.",
+        ErrorType.WEBSOCKET_ERROR: "Connection error occurred. Please refresh and try again.",
+        ErrorType.EXTERNAL_SERVICE_ERROR: "External service is temporarily unavailable. Please try again later.",
+        ErrorType.CONFIGURATION_ERROR: "Service configuration error. Please contact support.",
+        ErrorType.SIGNING_ERROR: "Request authentication failed. Please try again.",
+        ErrorType.INTERNAL_SERVER_ERROR: "An unexpected error occurred. Please try again later."
+    }
+    return friendly_messages.get(error_type, "An unexpected error occurred. Please try again later.")
 
 
 def _get_status_code_for_error_type(error_type: ErrorType) -> int:

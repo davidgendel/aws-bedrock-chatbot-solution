@@ -1643,7 +1643,7 @@ def optimize_vector_index(index_name: str) -> Dict[str, Any]:
         
     except Exception as e:
         logger.error(f"Failed to optimize vector index: {e}")
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": "Vector index optimization failed"}
 
 
 def get_vector_index_stats() -> Dict[str, Any]:
@@ -1717,7 +1717,7 @@ def get_vector_index_stats() -> Dict[str, Any]:
         logger.error(f"Failed to get vector index stats: {error}")
         return {
             "success": False,
-            "error": str(error)
+            "error": "Vector cleanup failed"
         }
 def store_document_metadata(document_id: str, metadata: Dict[str, Any]) -> bool:
     """
@@ -1876,7 +1876,7 @@ def cleanup_old_vectors(days_old: int = 90) -> Dict[str, Any]:
         logger.error(f"Failed to cleanup old vectors: {error}")
         return {
             "success": False,
-            "error": str(error),
+            "error": "Vector deletion failed",
             "deleted_count": 0
         }
 

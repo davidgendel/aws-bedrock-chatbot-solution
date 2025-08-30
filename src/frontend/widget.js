@@ -907,10 +907,10 @@
       
       // Handle standardized error response format
       if (!data.success || data.error) {
-        const errorMessage = data.error ? 
-          (data.error.message || data.error) : 
-          'An unknown error occurred';
-        addMessage('bot', `Sorry, I encountered an error: ${errorMessage}`);
+        const errorMessage = data.error && data.error.message ? 
+          data.error.message : 
+          'An unexpected error occurred. Please try again later.';
+        addMessage('bot', `Sorry, ${errorMessage}`);
       } else {
         // Handle success response
         const responseText = data.data ? data.data.response : data.response;
@@ -1432,25 +1432,18 @@
           isStreaming = false;
           
           // Handle standardized error format
-          let errorMessage = 'Unknown error';
+          let errorMessage = 'An unexpected error occurred. Please try again later.';
           if (data.error) {
             if (typeof data.error === 'string') {
               errorMessage = data.error;
             } else if (data.error.message) {
               errorMessage = data.error.message;
             }
-            
-            // Add details if available
-            if (data.details) {
-              if (Array.isArray(data.details)) {
-                errorMessage += ': ' + data.details.join(', ');
-              } else if (typeof data.details === 'string') {
-                errorMessage += ': ' + data.details;
-              }
-            }
+          } else if (data.message) {
+            errorMessage = data.message;
           }
           
-          addMessage('bot', `Sorry, I encountered an error: ${errorMessage}`);
+          addMessage('bot', `Sorry, ${errorMessage}`);
           isWaitingForResponse = false;
           break;
           

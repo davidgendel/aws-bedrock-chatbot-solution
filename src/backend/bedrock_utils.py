@@ -524,7 +524,7 @@ def apply_guardrails(text: str, guardrail_id: Optional[str] = None, guardrail_ve
         # In case of error, allow content but log the issue
         return {
             "blocked": False,
-            "reasons": [f"Guardrail system error: {str(e)}"]
+            "reasons": ["Guardrail system temporarily unavailable"]
         }
 
 

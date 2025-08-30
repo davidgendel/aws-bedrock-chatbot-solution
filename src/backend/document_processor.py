@@ -189,7 +189,7 @@ def process_document(bucket: str, key: str) -> Dict[str, Any]:
                 embeddings = generate_embeddings(batch_texts)
             except Exception as e:
                 logger.error(f"Failed to generate embeddings for batch: {e}")
-                processing_result["errors"].append(f"Embedding generation failed: {str(e)}")
+                processing_result["errors"].append("Embedding generation failed")
                 continue
             
             # Store vectors for each chunk in the batch
@@ -214,7 +214,7 @@ def process_document(bucket: str, key: str) -> Dict[str, Any]:
                         
                 except Exception as e:
                     logger.error(f"Error processing chunk {i+j}: {e}")
-                    processing_result["errors"].append(f"Chunk {i+j} processing failed: {str(e)}")
+                    processing_result["errors"].append(f"Chunk {i+j} processing failed")
         
         processing_result["chunks_processed"] = processed_chunks
         processing_result["processing_time"] = time.time() - start_time
@@ -235,7 +235,7 @@ def process_document(bucket: str, key: str) -> Dict[str, Any]:
         
     except Exception as e:
         processing_result["processing_time"] = time.time() - start_time
-        processing_result["errors"].append(str(e))
+        processing_result["errors"].append("Document processing failed")
         logger.error(f"Document processing failed for {key}: {e}")
         return processing_result
 
@@ -274,7 +274,7 @@ def process_batch_documents(documents: List[Dict[str, str]]) -> Dict[str, Any]:
                 
         except Exception as e:
             batch_result["failed_documents"] += 1
-            batch_result["errors"].append(f"Failed to process {doc['key']}: {str(e)}")
+            batch_result["errors"].append(f"Failed to process {doc['key']}")
             logger.error(f"Batch processing error for {doc['key']}: {e}")
     
     batch_result["success"] = batch_result["failed_documents"] == 0
@@ -328,7 +328,7 @@ def handler(event, context):
     
     except Exception as e:
         logger.error(f"Document processor handler error: {e}")
-        return create_error_response(str(e), 500)
+        return create_error_response("Document processing failed", 500)
 
 
 def _is_document_file(key: str) -> bool:

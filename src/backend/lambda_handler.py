@@ -430,8 +430,7 @@ def stream_response_to_connection(
                 connection_id,
                 {
                     "type": "error",
-                    "error": "Failed to generate response",
-                    "details": str(bedrock_error)
+                    "error": "Failed to generate response"
                 }
             )
             return
@@ -477,8 +476,7 @@ def stream_response_to_connection(
                 connection_id,
                 {
                     "type": "error",
-                    "error": "Error processing response stream",
-                    "details": str(stream_error)
+                    "error": "Error processing response stream"
                 }
             )
             return
@@ -505,8 +503,7 @@ def stream_response_to_connection(
             {
                 "type": "error",
                 "connectionId": connection_id,
-                "error": "An error occurred while streaming the response",
-                "details": str(e)
+                "error": "An error occurred while streaming the response"
             }
         )
 
