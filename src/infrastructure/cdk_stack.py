@@ -434,27 +434,36 @@ def handler(event, context):
             ],
         )
 
-        # Add permissions for Bedrock
+        # Add permissions for Bedrock - specific model and guardrail only
         lambda_role.add_to_policy(
             iam.PolicyStatement(
                 actions=[
                     "bedrock:InvokeModel",
                     "bedrock:InvokeModelWithResponseStream",
-                    "bedrock:ApplyGuardrail",
                 ],
-                resources=["*"],
+                resources=[
+                    f"arn:aws:bedrock:{self.region}::foundation-model/{self.config['bedrock']['modelId']}",
+                    f"arn:aws:bedrock:{self.region}::foundation-model/amazon.titan-embed-text-v2:0"  # For embeddings
+                ],
             )
         )
+        
+        # Add guardrail permissions only if guardrails are enabled
+        if self.config.get("bedrock", {}).get("guardrails", {}).get("createDefault", False):
+            lambda_role.add_to_policy(
+                iam.PolicyStatement(
+                    actions=["bedrock:ApplyGuardrail"],
+                    resources=[f"arn:aws:bedrock:{self.region}:{self.account}:guardrail/*"],
+                )
+            )
 
-        # Add permissions for CloudWatch metrics (cost monitoring)
+        # Add permissions for CloudWatch metrics (cost monitoring) - specific namespaces only
         lambda_role.add_to_policy(
             iam.PolicyStatement(
                 actions=[
                     "cloudwatch:PutMetricData",
-                    "cloudwatch:GetMetricStatistics",
-                    "cloudwatch:ListMetrics"
                 ],
-                resources=["*"],
+                resources=["*"],  # CloudWatch metrics don't support resource-level permissions
                 conditions={
                     "StringEquals": {
                         "cloudwatch:namespace": [
@@ -467,25 +476,25 @@ def handler(event, context):
             )
         )
 
-        # Add permissions for S3 Vectors service (will be refined after vector indexes are created)
+        # Add permissions for S3 Vectors service - specific to chatbot vector buckets only
         lambda_role.add_to_policy(
             iam.PolicyStatement(
                 actions=[
-                    "s3vectors:CreateVectorBucket",
-                    "s3vectors:DeleteVectorBucket",
                     "s3vectors:GetVectorBucket",
-                    "s3vectors:ListVectorBuckets",
-                    "s3vectors:CreateIndex",
-                    "s3vectors:DeleteIndex", 
+                    "s3vectors:CreateIndex",      # Used in operational functions
+                    "s3vectors:DeleteIndex",      # Used in delete_vector_index()
                     "s3vectors:GetIndex",
                     "s3vectors:ListIndexes",
                     "s3vectors:PutVectors",
                     "s3vectors:QueryVectors",
-                    "s3vectors:DeleteVectors",
+                    "s3vectors:GetVectors",
                     "s3vectors:ListVectors",
-                    "s3vectors:GetVectors"
+                    "s3vectors:DeleteVectors"
                 ],
-                resources=["*"]  # S3 Vectors permissions are typically granted on all resources
+                resources=[
+                    f"arn:aws:s3vectors:{self.region}:{self.account}:bucket/chatbot-*",
+                    f"arn:aws:s3vectors:{self.region}:{self.account}:index/chatbot-*"
+                ]
             )
         )
 
@@ -505,11 +514,18 @@ def handler(event, context):
             )
         )
 
-        # Add permissions for Textract
+        # Add permissions for Textract - only for documents in our bucket
         lambda_role.add_to_policy(
             iam.PolicyStatement(
                 actions=["textract:AnalyzeDocument"],
-                resources=["*"],
+                resources=["*"],  # Textract doesn't support resource-level permissions
+                conditions={
+                    "StringLike": {
+                        "textract:S3Object": [
+                            f"{self.s3_buckets['document_bucket'].bucket_arn}/*"
+                        ]
+                    }
+                }
             )
         )
 
