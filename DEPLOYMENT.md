@@ -183,7 +183,3 @@ aws cloudformation delete-stack --stack-name ChatbotRagStack
 
 ---
 
-**Ready to deploy?**
-```bash
-./chatbot deploy
-```

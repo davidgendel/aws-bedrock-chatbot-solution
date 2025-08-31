@@ -50,6 +50,7 @@ cd aws-bedrock-chatbot-solution
 
 **Note**: The `./chatbot` and `./process_documents` scripts handle all dependencies automatically using isolated Python virtual environments. No manual `pip install` required.
 
+
 ## 📚 Document Management
 
 ### **Document Processing Commands**
@@ -57,14 +58,21 @@ cd aws-bedrock-chatbot-solution
 All commands automatically manage Python virtual environments to protect your system:
 
 ```bash
-# Process documents locally (recommended)
+# Process documents in a folder
 ./process_documents --folder ./documents
+
+# Parallel processing  
+./process_documents --folder ./documents --parallel --workers 3
+
+# Advanced parallel processing  
+./process_documents --folder ./documents --advanced
 
 # Process single document
 ./process_documents --file ./doc.pdf
 
 # Delete document
 ./process_documents --delete "document-id"
+
 ```
 
 ### **Vector Index Management**
@@ -88,7 +96,6 @@ Maintain optimal performance with built-in vector management tools:
 **Key Benefits:**
 - ⚡ **Automatic optimization** - Clears caches and optimizes performance
 - 📊 **Performance monitoring** - Track cache hit rates and costs
-- 🔧 **Zero configuration** - Automatically detects deployment settings
 - 💰 **Cost tracking** - Monitor monthly vector storage and query costs
 
 ## 💰 Estimated Costs
@@ -160,7 +167,6 @@ python3 src/backend/config_validator.py
 
 - **[DEPLOYMENT.md](DEPLOYMENT.md)** - Complete deployment guide
 - **[docs/vector_management.md](docs/vector_management.md)** - Vector index management guide
-- **[docs/request-signing.md](docs/request-signing.md)** - AWS request signing configuration
 - **[docs/troubleshooting.md](docs/troubleshooting.md)** - Common issues
 - **[docs/api-spec.yaml](docs/api-spec.yaml)** - API documentation
 
@@ -176,13 +182,3 @@ python3 src/backend/config_validator.py
 MIT License - Free for commercial and personal use.
 
 ---
-
-**Ready to deploy?**
-```bash
-./chatbot deploy
-```
-
-**Ready to optimize your vectors?**
-```bash
-./chatbot vector optimize
-```

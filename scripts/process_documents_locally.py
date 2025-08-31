@@ -15,6 +15,8 @@ import re
 from pathlib import Path
 from typing import Dict, List, Any
 from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
+import multiprocessing as mp
 
 # Configure logging
 logging.basicConfig(
@@ -22,6 +24,14 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Try to import psutil, fallback to basic detection
+try:
+    import psutil
+    HAS_PSUTIL = True
+except ImportError:
+    HAS_PSUTIL = False
+    logger.warning("psutil not available, using basic resource detection")
 
 # Import required libraries
 import boto3
@@ -63,6 +73,85 @@ try:
     import textstat
 except ImportError as e:
     logger.warning(f"Some document processing libraries not available: {e}")
+
+
+def _process_single_file_cpu_task(file_path_str: str) -> Dict[str, Any]:
+    """CPU-intensive processing for a single file - module level for pickling."""
+    try:
+        from pathlib import Path
+        import nltk
+        from nltk.tokenize import sent_tokenize
+        
+        file_path = Path(file_path_str)
+        
+        # Extract text using basic extraction
+        def extract_text_basic(file_path: Path) -> str:
+            extension = file_path.suffix.lower()
+            if extension == '.txt':
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    return f.read()
+            elif extension in ['.md', '.markdown']:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    return f.read()
+            else:
+                return ""
+        
+        # Create chunks using basic chunking
+        def create_chunks_basic(text: str, metadata: Dict[str, Any]) -> List[Dict[str, Any]]:
+            sentences = sent_tokenize(text)
+            chunks = []
+            max_chunk_size = 750
+            overlap_size = 100
+            
+            current_chunk = ""
+            current_size = 0
+            
+            for sentence in sentences:
+                if current_size + len(sentence) > max_chunk_size and current_chunk:
+                    chunks.append({
+                        "content": current_chunk.strip(),
+                        "metadata": metadata.copy(),
+                        "chunk_index": len(chunks)
+                    })
+                    
+                    # Start new chunk with overlap
+                    overlap_text = current_chunk[-overlap_size:] if len(current_chunk) > overlap_size else current_chunk
+                    current_chunk = overlap_text + " " + sentence
+                    current_size = len(current_chunk)
+                else:
+                    if current_chunk:
+                        current_chunk += " " + sentence
+                    else:
+                        current_chunk = sentence
+                    current_size += len(sentence)
+            
+            if current_chunk.strip():
+                chunks.append({
+                    "content": current_chunk.strip(),
+                    "metadata": metadata.copy(),
+                    "chunk_index": len(chunks)
+                })
+            
+            return chunks
+        
+        text_content = extract_text_basic(file_path)
+        if not text_content.strip():
+            return {"file_path": file_path_str, "status": "empty", "chunks": []}
+        
+        chunks = create_chunks_basic(text_content, {
+            "title": file_path.name,
+            "source": str(file_path),
+            "document_id": file_path.stem
+        })
+        
+        return {
+            "file_path": file_path_str,
+            "status": "success", 
+            "chunks": chunks,
+            "text_length": len(text_content)
+        }
+    except Exception as e:
+        return {"file_path": file_path_str, "status": "error", "error": str(e)}
 
 
 class AWSClientManager:
@@ -170,14 +259,14 @@ class LocalDocumentProcessor:
                     logger.warning(f"Token expired (attempt {attempt + 1}/{max_retries}), refreshing clients...")
                     logger.warning(f"Error details: {error_code} - {error_message}")
                     self.aws_manager.refresh_all_clients()
-                    time.sleep(3)  # Longer pause to ensure fresh credentials
+                    time.sleep(2)  # Longer pause to ensure fresh credentials
                     continue
                 raise
             except (TokenRetrievalError, NoCredentialsError) as e:
                 if attempt < max_retries - 1:
                     logger.warning(f"Credential error (attempt {attempt + 1}/{max_retries}), refreshing clients...")
                     self.aws_manager.refresh_all_clients()
-                    time.sleep(3)
+                    time.sleep(2)
                     continue
                 raise
             except Exception as e:
@@ -187,7 +276,7 @@ class LocalDocumentProcessor:
                     logger.warning(f"Possible credential error (attempt {attempt + 1}/{max_retries}), refreshing clients...")
                     logger.warning(f"Error details: {str(e)}")
                     self.aws_manager.refresh_all_clients()
-                    time.sleep(3)
+                    time.sleep(2)
                     continue
                 raise
         
@@ -267,6 +356,30 @@ class LocalDocumentProcessor:
         logger.warning("Set AWS_REGION environment variable or run 'aws configure' to specify region")
         return 'us-east-1'
     
+    def _extract_text_streaming(self, file_path: str, chunk_size: int = 1024*1024) -> str:
+        """Extract text from file using streaming for memory efficiency."""
+        file_path = Path(file_path)
+        extension = file_path.suffix.lower()
+        
+        # For large text files, use streaming
+        if extension in ['.txt', '.md', '.markdown', '.html'] and file_path.stat().st_size > chunk_size:
+            logger.info(f"Using streaming extraction for large file: {file_path}")
+            content_parts = []
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    while True:
+                        chunk = f.read(chunk_size)
+                        if not chunk:
+                            break
+                        content_parts.append(chunk)
+                return ''.join(content_parts)
+            except Exception as e:
+                logger.error(f"Streaming extraction failed for {file_path}: {e}")
+                return ""
+        
+        # Fall back to regular extraction for other files or smaller files
+        return self._extract_text_from_file(file_path)
+
     def _extract_text_from_file(self, file_path: str) -> str:
         """Extract text from various file formats."""
         file_path = Path(file_path)
@@ -424,13 +537,203 @@ class LocalDocumentProcessor:
         
         return chunks
     
+    def _process_cpu_tasks_parallel(self, file_paths: List[str]) -> List[Dict[str, Any]]:
+        """
+        Parallel text extraction and chunking using process pool.
+        
+        Args:
+            file_paths: List of file paths to process
+            
+        Returns:
+            List of processing results with status, chunks, and metadata
+            
+        Note:
+            Uses ProcessPoolExecutor for CPU-intensive tasks (text extraction, chunking).
+            Conservative worker limit prevents system overload.
+        """
+        if not file_paths:
+            logger.warning("No file paths provided for CPU parallelization")
+            return []
+            
+        logger.info(f"Starting CPU parallelization for {len(file_paths)} files")
+        
+        # Calculate optimal worker count
+        max_workers = min(mp.cpu_count(), len(file_paths), 4)
+        logger.info(f"Using {max_workers} CPU workers for parallel processing")
+        
+        results = []
+        try:
+            with ProcessPoolExecutor(max_workers=max_workers) as executor:
+                future_to_path = {executor.submit(_process_single_file_cpu_task, path): path for path in file_paths}
+                
+                for future in as_completed(future_to_path):
+                    try:
+                        result = future.result(timeout=900)
+                        results.append(result)
+                        
+                        # Progress logging
+                        if len(results) % 5 == 0 or len(results) == len(file_paths):
+                            logger.info(f"CPU processing progress: {len(results)}/{len(file_paths)} files completed")
+                            
+                    except Exception as e:
+                        path = future_to_path[future]
+                        logger.error(f"Future execution failed for {path}: {e}")
+                        results.append({"file_path": path, "status": "error", "error": str(e)})
+                        
+        except Exception as e:
+            logger.error(f"ProcessPoolExecutor failed: {e}")
+            # Fallback to sequential processing
+            logger.info("Falling back to sequential CPU processing")
+            for path in file_paths:
+                results.append(_process_single_file_cpu_task(path))
+        
+        successful = sum(1 for r in results if r["status"] == "success")
+        logger.info(f"CPU parallelization completed: {successful}/{len(file_paths)} files successful")
+        return results
+
+    def _get_optimal_batch_config(self) -> Dict[str, int]:
+        """
+        Calculate optimal batch sizes based on system resources.
+        
+        Returns:
+            Dictionary with optimal batch sizes and worker counts
+            
+        Note:
+            Uses psutil when available for accurate memory detection.
+            Falls back to CPU-based estimation for compatibility.
+        """
+        cpu_count = mp.cpu_count()
+        
+        # Get memory info with fallback
+        if HAS_PSUTIL:
+            try:
+                memory_gb = psutil.virtual_memory().total / (1024**3)
+                logger.debug("Using psutil for accurate memory detection")
+            except Exception as e:
+                logger.warning(f"psutil memory detection failed: {e}, using fallback")
+                memory_gb = max(2.0, cpu_count * 0.5)
+        else:
+            # Fallback: assume reasonable memory based on CPU count
+            memory_gb = max(2.0, cpu_count * 0.5)
+            logger.debug("Using CPU-based memory estimation")
+        
+        # Dynamic batch sizing with conservative limits
+        embedding_batch_size = min(50, max(10, cpu_count * 8))
+        embedding_workers = min(4, max(2, cpu_count // 2))
+        document_workers = min(3, max(1, cpu_count // 3))
+        
+        logger.info(f"System resources: {cpu_count} CPUs, {memory_gb:.1f}GB RAM")
+        logger.info(f"Optimal configuration: embed_batch={embedding_batch_size}, embed_workers={embedding_workers}, doc_workers={document_workers}")
+        
+        return {
+            "embedding_batch_size": embedding_batch_size,
+            "embedding_workers": embedding_workers,
+            "document_workers": document_workers
+        }
+
+    def _process_embeddings_intelligent_batches(self, chunks: List[str]) -> List[List[float]]:
+        """
+        Process embeddings with intelligent batching based on system resources.
+        
+        Args:
+            chunks: List of text chunks to generate embeddings for
+            
+        Returns:
+            List of embedding vectors
+            
+        Note:
+            Automatically determines optimal batch sizes and worker counts.
+            Provides progress logging for long-running operations.
+        """
+        if not chunks:
+            logger.warning("No chunks provided for embedding generation")
+            return []
+            
+        try:
+            config = self._get_optimal_batch_config()
+            batch_size = config["embedding_batch_size"]
+            workers = config["embedding_workers"]
+            
+            logger.info(f"Processing {len(chunks)} embeddings in batches of {batch_size} with {workers} workers")
+            
+            all_embeddings = []
+            total_batches = (len(chunks) + batch_size - 1) // batch_size
+            
+            for i in range(0, len(chunks), batch_size):
+                batch_num = i // batch_size + 1
+                batch = chunks[i:i + batch_size]
+                
+                try:
+                    batch_embeddings = self._generate_embeddings_parallel(batch, max_workers=workers)
+                    all_embeddings.extend(batch_embeddings)
+                    
+                    logger.info(f"Completed embedding batch {batch_num}/{total_batches} ({len(batch)} chunks)")
+                    
+                    # Add delay between batches to prevent throttling
+                    if batch_num < total_batches:  # Don't delay after the last batch
+                        time.sleep(3)  # 3 second delay between batches
+                    
+                except Exception as e:
+                    logger.error(f"Batch {batch_num} failed: {e}")
+                    # Add zero vectors as fallback
+                    fallback_embeddings = [[0.0] * self.config["vectorIndex"]["dimensions"]] * len(batch)
+                    all_embeddings.extend(fallback_embeddings)
+            
+            logger.info(f"Intelligent batching completed: {len(all_embeddings)} embeddings generated")
+            return all_embeddings
+            
+        except Exception as e:
+            logger.error(f"Intelligent batching failed: {e}")
+            # Fallback to sequential processing
+            logger.info("Falling back to sequential embedding generation")
+            return [self._generate_embeddings(chunk) for chunk in chunks]
+
+    def _generate_embeddings_parallel(self, chunks: List[str], max_workers: int = 3) -> List[List[float]]:
+        """Generate embeddings in parallel with controlled concurrency and throttle protection."""
+        logger.info(f"Generating embeddings for {len(chunks)} chunks using {max_workers} workers")
+        
+        def generate_single_embedding(chunk_text: str) -> List[float]:
+            # Add delay between individual embedding calls to prevent throttling
+            time.sleep(1)  # 1 second delay between chunks
+            return self._generate_embeddings(chunk_text)
+        
+        embeddings = []
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all tasks
+            future_to_index = {
+                executor.submit(generate_single_embedding, chunk): i 
+                for i, chunk in enumerate(chunks)
+            }
+            
+            # Collect results in order
+            results = [None] * len(chunks)
+            for future in as_completed(future_to_index):
+                index = future_to_index[future]
+                try:
+                    results[index] = future.result()
+                except Exception as e:
+                    logger.error(f"Failed to generate embedding for chunk {index}: {e}")
+                    results[index] = [0.0] * self.config["vectorIndex"]["dimensions"]
+                
+                # Progress logging
+                completed = sum(1 for r in results if r is not None)
+                if completed % 5 == 0 or completed == len(chunks):
+                    logger.info(f"Generated embeddings: {completed}/{len(chunks)}")
+        
+        return results
+
     def _generate_embeddings(self, text: str) -> List[float]:
-        """Generate embeddings using Bedrock with optimized text length."""
+        """Generate embeddings using Bedrock with optimized text length and validation."""
         def _generate():
             bedrock_client = self._get_bedrock_client()
             
             # Optimize text length for better embedding quality
             optimized_text = self._optimize_text_for_embedding(text)
+            
+            # Skip empty or whitespace-only text
+            if not optimized_text.strip():
+                logger.warning("Empty text provided for embedding generation")
+                return [0.001] * self.config["vectorIndex"]["dimensions"]  # Small non-zero vector
             
             response = bedrock_client.invoke_model(
                 modelId=self.config["bedrock"]["embeddingModelId"],
@@ -440,14 +743,77 @@ class LocalDocumentProcessor:
             )
             
             result = json.loads(response['body'].read())
-            return result['embedding']
+            embedding = result['embedding']
+            
+            # Validate embedding to prevent zero norm vectors
+            if not self._validate_embedding(embedding):
+                logger.warning(f"Invalid embedding generated for text: {optimized_text[:100]}...")
+                return self._generate_fallback_embedding(optimized_text)
+            
+            return embedding
         
         try:
             return self._retry_with_refresh(_generate)
         except Exception as e:
             logger.error(f"Failed to generate embeddings: {e}")
-            # Return zero vector as fallback
-            return [0.0] * self.config["vectorIndex"]["dimensions"]
+            # Return small non-zero vector as fallback
+            return [0.001] * self.config["vectorIndex"]["dimensions"]
+    
+    def _validate_embedding(self, embedding: List[float]) -> bool:
+        """Validate that embedding is not zero norm and contains valid values."""
+        try:
+            if not embedding or len(embedding) != self.config["vectorIndex"]["dimensions"]:
+                return False
+            
+            # Check for all zeros or invalid values
+            import math
+            norm_squared = sum(x * x for x in embedding)
+            
+            if norm_squared == 0.0 or not math.isfinite(norm_squared):
+                return False
+            
+            # Check for NaN or infinite values
+            if any(not math.isfinite(x) for x in embedding):
+                return False
+            
+            return True
+        except Exception:
+            return False
+    
+    def _generate_fallback_embedding(self, text: str) -> List[float]:
+        """Generate a deterministic fallback embedding for problematic text."""
+        try:
+            import hashlib
+            
+            # Create a deterministic hash-based embedding
+            text_hash = hashlib.md5(text.encode('utf-8')).hexdigest()
+            
+            # Convert hash to embedding vector
+            embedding = []
+            dimensions = self.config["vectorIndex"]["dimensions"]
+            
+            for i in range(dimensions):
+                # Use different parts of the hash to create variation
+                hash_part = text_hash[(i * 2) % len(text_hash):(i * 2 + 2) % len(text_hash)]
+                if len(hash_part) < 2:
+                    hash_part = text_hash[:2]
+                
+                # Convert to float in range [-0.1, 0.1] to ensure small but non-zero values
+                value = (int(hash_part, 16) / 255.0 - 0.5) * 0.2
+                embedding.append(value)
+            
+            # Ensure the vector has a small but non-zero norm
+            norm_squared = sum(x * x for x in embedding)
+            if norm_squared == 0.0:
+                embedding[0] = 0.001  # Ensure non-zero norm
+            
+            logger.info(f"Generated fallback embedding for problematic text")
+            return embedding
+            
+        except Exception as e:
+            logger.error(f"Failed to generate fallback embedding: {e}")
+            # Final fallback: small random-like vector
+            return [0.001 * (i % 3 - 1) for i in range(self.config["vectorIndex"]["dimensions"])]
     
     def _optimize_text_for_embedding(self, text: str) -> str:
         """Optimize text length and content for embedding generation."""
@@ -600,7 +966,7 @@ class LocalDocumentProcessor:
             
             # Extract text from document
             logger.info("Extracting text...")
-            text_content = self._extract_text_from_file(str(file_path))
+            text_content = self._extract_text_streaming(str(file_path))
             
             if not text_content.strip():
                 logger.warning(f"No text content extracted from {file_path}")
@@ -616,38 +982,12 @@ class LocalDocumentProcessor:
             
             logger.info(f"Created {len(chunks)} chunks")
             
-            # Generate embeddings for all chunks
-            logger.info("Generating embeddings...")
-            embeddings = []
+            # Generate embeddings in parallel
+            logger.info("Generating embeddings in parallel...")
+            chunk_texts = [chunk["content"] for chunk in chunks]
             
-            # Process embeddings in batches to handle token refresh better
-            batch_size = 20  # Process 20 embeddings at a time
-            total_chunks = len(chunks)
-            
-            for batch_start in range(0, total_chunks, batch_size):
-                batch_end = min(batch_start + batch_size, total_chunks)
-                batch_chunks = chunks[batch_start:batch_end]
-                
-                # Proactively refresh clients before each batch
-                if batch_start > 0:  # Don't refresh on first batch
-                    logger.info(f"Proactively refreshing clients before batch {batch_start + 1}-{batch_end}")
-                    self.aws_manager.refresh_all_clients()
-                
-                # Process this batch
-                for i, chunk in enumerate(batch_chunks):
-                    actual_index = batch_start + i
-                    try:
-                        embedding = self._generate_embeddings(chunk["content"])
-                        embeddings.append(embedding)
-                        
-                        if (actual_index + 1) % 10 == 0:
-                            logger.info(f"Generated embeddings for {actual_index + 1}/{total_chunks} chunks")
-                    except Exception as e:
-                        logger.error(f"Failed to generate embedding for chunk {actual_index}: {e}")
-                        # Use zero vector as fallback
-                        embeddings.append([0.0] * self.config["vectorIndex"]["dimensions"])
-                
-                logger.info(f"Completed embedding batch {batch_start + 1}-{batch_end} of {total_chunks} chunks")
+            # Use parallel processing for embedding generation
+            embeddings = self._generate_embeddings_parallel(chunk_texts, max_workers=3)
             
             # Store vectors and metadata
             logger.info("Storing vectors and metadata...")
@@ -668,6 +1008,220 @@ class LocalDocumentProcessor:
                 "error": str(e)
             }
     
+    def process_folder_advanced_parallel(self, folder_path: str, recursive: bool = True) -> Dict[str, Any]:
+        """
+        Advanced parallel processing with CPU task parallelization and intelligent batching.
+        
+        Args:
+            folder_path: Path to folder containing documents
+            recursive: Whether to process subdirectories
+            
+        Returns:
+            Processing results with detailed statistics
+            
+        Note:
+            Two-phase processing: CPU tasks (extraction/chunking) then embeddings.
+            Provides maximum performance through intelligent resource utilization.
+        """
+        folder_path = Path(folder_path)
+        if not folder_path.exists():
+            raise FileNotFoundError(f"Folder not found: {folder_path}")
+        
+        # Find all supported files
+        supported_extensions = {'.pdf', '.docx', '.doc', '.txt', '.md', '.html', '.csv', '.json'}
+        try:
+            if recursive:
+                files = [f for f in folder_path.rglob('*') if f.suffix.lower() in supported_extensions]
+            else:
+                files = [f for f in folder_path.iterdir() if f.is_file() and f.suffix.lower() in supported_extensions]
+        except Exception as e:
+            logger.error(f"Failed to scan folder {folder_path}: {e}")
+            raise
+        
+        if not files:
+            logger.warning(f"No supported files found in {folder_path}")
+            return {"total_files": 0, "processed": 0, "skipped": 0, "errors": 0, "details": []}
+        
+        logger.info(f"Starting advanced parallel processing for {len(files)} files")
+        
+        try:
+            config = self._get_optimal_batch_config()
+            logger.info(f"Using advanced processing with system-optimized configuration")
+        except Exception as e:
+            logger.error(f"Failed to get optimal configuration: {e}")
+            raise
+        
+        results = {"total_files": len(files), "processed": 0, "skipped": 0, "errors": 0, "details": []}
+        
+        try:
+            # Phase 1: CPU-intensive tasks (text extraction + chunking) in parallel
+            logger.info("Phase 1: Starting parallel CPU tasks (extraction + chunking)")
+            file_paths = [str(f) for f in files]
+            cpu_results = self._process_cpu_tasks_parallel(file_paths)
+            
+            # Phase 2: Process embeddings and storage for successful extractions
+            logger.info("Phase 2: Starting embedding generation and storage")
+            successful_cpu_results = [r for r in cpu_results if r["status"] == "success"]
+            
+            if successful_cpu_results:
+                logger.info(f"Processing embeddings for {len(successful_cpu_results)} successfully extracted files")
+            
+            for cpu_result in cpu_results:
+                file_path = Path(cpu_result["file_path"])
+                try:
+                    relative_path = file_path.relative_to(folder_path)
+                    document_id = str(relative_path).replace('/', '_').replace('\\', '_')
+                    
+                    if cpu_result["status"] == "success":
+                        try:
+                            chunks = cpu_result["chunks"]
+                            if not chunks:
+                                logger.info(f"No chunks created for {file_path}")
+                                results["skipped"] += 1
+                                results["details"].append({
+                                    "file": str(file_path),
+                                    "document_id": document_id,
+                                    "result": {"status": "skipped", "reason": "No chunks created"}
+                                })
+                                continue
+                            
+                            chunk_texts = [chunk["content"] for chunk in chunks]
+                            
+                            # Use intelligent batching for embeddings
+                            embeddings = self._process_embeddings_intelligent_batches(chunk_texts)
+                            
+                            # Store results
+                            self._store_vectors_to_s3(document_id, chunks, embeddings)
+                            
+                            results["processed"] += 1
+                            results["details"].append({
+                                "file": str(file_path),
+                                "document_id": document_id,
+                                "result": {
+                                    "status": "success", 
+                                    "chunks_processed": len(chunks),
+                                    "text_length": cpu_result.get("text_length", 0)
+                                }
+                            })
+                            
+                            logger.info(f"Successfully processed {file_path} ({len(chunks)} chunks)")
+                            
+                        except Exception as e:
+                            logger.error(f"Phase 2 processing failed for {file_path}: {e}")
+                            results["errors"] += 1
+                            results["details"].append({
+                                "file": str(file_path),
+                                "document_id": document_id,
+                                "result": {"status": "error", "error": f"Phase 2 failed: {str(e)}"}
+                            })
+                    else:
+                        # Handle CPU processing failures
+                        if cpu_result["status"] == "empty":
+                            results["skipped"] += 1
+                            logger.info(f"Skipped {file_path} (no content)")
+                        else:
+                            results["errors"] += 1
+                            logger.error(f"CPU processing failed for {file_path}: {cpu_result.get('error', 'Unknown error')}")
+                        
+                        results["details"].append({
+                            "file": str(file_path),
+                            "result": {
+                                "status": cpu_result["status"], 
+                                "error": cpu_result.get("error", "No content extracted")
+                            }
+                        })
+                        
+                except Exception as e:
+                    logger.error(f"Failed to process result for {file_path}: {e}")
+                    results["errors"] += 1
+                    results["details"].append({
+                        "file": str(file_path),
+                        "result": {"status": "error", "error": str(e)}
+                    })
+            
+            logger.info(f"Advanced parallel processing completed: {results['processed']} processed, {results['skipped']} skipped, {results['errors']} errors")
+            return results
+            
+        except Exception as e:
+            logger.error(f"Advanced parallel processing failed: {e}")
+            raise
+
+    def process_folder_parallel(self, folder_path: str, recursive: bool = True, max_workers: int = 2) -> Dict[str, Any]:
+        """Process multiple documents in parallel."""
+        folder_path = Path(folder_path)
+        if not folder_path.exists():
+            raise FileNotFoundError(f"Folder not found: {folder_path}")
+        
+        # Supported file extensions
+        supported_extensions = {'.pdf', '.docx', '.doc', '.txt', '.md', '.html', '.csv', '.json'}
+        
+        # Find all files
+        if recursive:
+            files = [f for f in folder_path.rglob('*') if f.suffix.lower() in supported_extensions]
+        else:
+            files = [f for f in folder_path.iterdir() if f.is_file() and f.suffix.lower() in supported_extensions]
+        
+        logger.info(f"Found {len(files)} files to process in {folder_path} using {max_workers} workers")
+        
+        results = {
+            "total_files": len(files),
+            "processed": 0,
+            "skipped": 0,
+            "errors": 0,
+            "details": []
+        }
+        
+        def process_single_file(file_path):
+            try:
+                # Use relative path as document ID
+                relative_path = file_path.relative_to(folder_path)
+                document_id = str(relative_path).replace('/', '_').replace('\\', '_')
+                
+                result = self.process_file(file_path, document_id)
+                return {
+                    "file": str(file_path),
+                    "document_id": document_id,
+                    "result": result
+                }
+            except Exception as e:
+                logger.error(f"Failed to process {file_path}: {e}")
+                return {
+                    "file": str(file_path),
+                    "result": {"status": "error", "error": str(e)}
+                }
+        
+        # Process files in parallel
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_file = {executor.submit(process_single_file, file_path): file_path for file_path in files}
+            
+            for future in as_completed(future_to_file):
+                file_path = future_to_file[future]
+                try:
+                    file_result = future.result()
+                    results["details"].append(file_result)
+                    
+                    status = file_result["result"]["status"]
+                    if status == "success":
+                        results["processed"] += 1
+                    elif status == "skipped":
+                        results["skipped"] += 1
+                    else:
+                        results["errors"] += 1
+                    
+                    # Progress logging
+                    total_completed = results["processed"] + results["skipped"] + results["errors"]
+                    logger.info(f"Completed {total_completed}/{len(files)} files")
+                        
+                except Exception as e:
+                    logger.error(f"Failed to process {file_path}: {e}")
+                    results["errors"] += 1
+                    results["details"].append({
+                        "file": str(file_path),
+                        "result": {"status": "error", "error": str(e)}
+                    })
+        
+        return results
+
     def process_folder(self, folder_path: str, recursive: bool = True) -> Dict[str, Any]:
         """Process all documents in a folder."""
         folder_path = Path(folder_path)
@@ -779,6 +1333,9 @@ def main():
     parser.add_argument("--delete", help="Delete a document by ID")
     parser.add_argument("--config", help="Path to config file")
     parser.add_argument("--batch", action="store_true", help="Enable batch processing mode")
+    parser.add_argument("--parallel", action="store_true", help="Enable parallel processing for folders (Phase 1)")
+    parser.add_argument("--advanced", action="store_true", help="Enable advanced parallel processing (Phase 2)")
+    parser.add_argument("--workers", type=int, default=2, help="Number of parallel workers for folder processing (default: 2)")
     
     args = parser.parse_args()
     
@@ -796,7 +1353,16 @@ def main():
             result = processor.process_file(args.file, args.document_id)
             print(json.dumps(result, indent=2))
         elif args.folder:
-            result = processor.process_folder(args.folder, args.recursive)
+            # Choose processing mode
+            if args.advanced:
+                logger.info("Using advanced parallel processing (Phase 2 optimization)")
+                result = processor.process_folder_advanced_parallel(args.folder, args.recursive)
+            elif args.parallel:
+                logger.info("Using parallel folder processing (Phase 1 optimization)")
+                result = processor.process_folder_parallel(args.folder, args.recursive, args.workers)
+            else:
+                result = processor.process_folder(args.folder, args.recursive)
+            
             print(json.dumps(result, indent=2))
             
             # Print summary

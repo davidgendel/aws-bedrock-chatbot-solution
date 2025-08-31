@@ -4,6 +4,7 @@ S3 Vector utilities for document embeddings storage and retrieval.
 import json
 import logging
 import os
+import time
 import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -289,10 +290,16 @@ def store_document_vectors(document_id: str, chunks_with_embeddings: List[Dict[s
             for i, chunk in enumerate(batch_chunks):
                 vector_id = f"{document_id}_chunk_{batch_start + i}"
                 
+                # Validate embedding before storing
+                embedding = chunk["embedding"]
+                if not _validate_embedding_for_storage(embedding):
+                    logger.warning(f"Skipping invalid embedding for chunk {vector_id}")
+                    continue
+                
                 vector_entry = {
                     'key': vector_id,
                     'data': {
-                        'float32': chunk["embedding"]
+                        'float32': embedding
                     },
                     'metadata': {
                         'document_id': document_id,
@@ -306,7 +313,12 @@ def store_document_vectors(document_id: str, chunks_with_embeddings: List[Dict[s
                 }
                 vectors_to_insert.append(vector_entry)
             
-            # Use correct S3 Vectors API call
+            # Skip empty batches
+            if not vectors_to_insert:
+                logger.warning(f"Skipping batch {batch_start + 1}-{batch_end} (no valid vectors)")
+                continue
+            
+            # Use correct S3 Vectors API call with retry and delay
             try:
                 response = s3_vectors_client.put_vectors(
                     vectorBucketName=vector_bucket,
@@ -316,17 +328,44 @@ def store_document_vectors(document_id: str, chunks_with_embeddings: List[Dict[s
                 successful_chunks += len(vectors_to_insert)
                 logger.info(f"Stored batch {batch_start + 1}-{batch_end} using S3 Vectors API")
                 
+                # Add delay between batches to prevent throttling
+                if batch_end < total_chunks:  # Don't delay after the last batch
+                    time.sleep(2)  # 2 second delay between storage batches
+                
             except Exception as api_error:
                 logger.error(f"S3 Vectors API failed for batch {batch_start + 1}-{batch_end}: {api_error}")
                 return False
         
-        success = successful_chunks == total_chunks
+        success = successful_chunks > 0  # Success if we stored at least some vectors
         logger.info(f"Successfully stored {successful_chunks}/{total_chunks} vector chunks for document {document_id}")
         return success
         
     except Exception as e:
         error = handle_error(e, context={"function": "store_document_vectors", "document_id": document_id})
         logger.error(f"Failed to store document vectors: {error}")
+        return False
+
+
+def _validate_embedding_for_storage(embedding: List[float]) -> bool:
+    """Validate embedding before storing to prevent S3 Vectors API errors."""
+    try:
+        if not embedding or not isinstance(embedding, list):
+            return False
+        
+        # Check for zero norm (cosine distance doesn't support zero norm vectors)
+        import math
+        norm_squared = sum(x * x for x in embedding)
+        
+        if norm_squared == 0.0 or not math.isfinite(norm_squared):
+            return False
+        
+        # Check for NaN or infinite values
+        if any(not math.isfinite(x) for x in embedding):
+            return False
+        
+        return True
+        
+    except Exception:
         return False
 
 

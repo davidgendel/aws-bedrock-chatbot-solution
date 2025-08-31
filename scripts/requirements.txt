@@ -21,6 +21,8 @@ numpy>=1.26.0          # Vector operations
 # Performance and utilities
 orjson>=3.9.0          # Fast JSON processing
 cachetools>=5.3.0      # Caching utilities
+aiofiles>=24.1.0       # Async file I/O for Phase 1 optimizations
+psutil>=5.9.0          # System resource monitoring for Phase 2 optimizations
 
 # Security and configuration
 cryptography>=41.0.0   # Cryptographic operations
