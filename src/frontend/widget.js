@@ -252,7 +252,6 @@
   }
 
   // Widget state
-  let config = {};
   let chatHistory = [];
   let isWaitingForResponse = false;
   let cache = {};

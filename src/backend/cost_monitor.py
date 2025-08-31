@@ -124,7 +124,7 @@ class CostMonitor:
         
         # Initialize CloudWatch client
         try:
-            self.cloudwatch_client = get_cloudwatch_client(enable_signing=True)
+            self.cloudwatch_client = get_cloudwatch_client()
             logger.info("Cost monitor initialized successfully")
         except Exception as e:
             logger.warning(f"Failed to initialize CloudWatch client: {e}")

@@ -60,9 +60,7 @@ def get_cached_prompt_response(prompt: str, model_id: str) -> Optional[str]:
     with prompt_cache_lock:
         cached_result = prompt_cache.get(cache_key)
         if cached_result:
-            logger.debug(f"Prompt cache HIT for key: {cache_key[:16]}...")
             return cached_result
-        logger.debug(f"Prompt cache MISS for key: {cache_key[:16]}...")
         return None
 
 
@@ -71,7 +69,6 @@ def cache_prompt_response(prompt: str, model_id: str, response: str) -> None:
     cache_key = get_prompt_cache_key(prompt, model_id)
     with prompt_cache_lock:
         prompt_cache[cache_key] = response
-        logger.debug(f"Cached prompt response for key: {cache_key[:16]}...")
 
 
 def get_cached_context(embedding: List[float], limit: int, threshold: float) -> Optional[List[Dict[str, Any]]]:
@@ -80,9 +77,7 @@ def get_cached_context(embedding: List[float], limit: int, threshold: float) -> 
     with context_cache_lock:
         cached_result = context_cache.get(cache_key)
         if cached_result:
-            logger.debug(f"Context cache HIT for key: {cache_key[:16]}...")
             return cached_result
-        logger.debug(f"Context cache MISS for key: {cache_key[:16]}...")
         return None
 
 
@@ -91,7 +86,6 @@ def cache_context(embedding: List[float], limit: int, threshold: float, context:
     cache_key = get_context_cache_key(embedding, limit, threshold)
     with context_cache_lock:
         context_cache[cache_key] = context
-        logger.debug(f"Cached context for key: {cache_key[:16]}...")
 
 
 def should_apply_guardrails(user_input: str) -> bool:
@@ -110,7 +104,7 @@ def should_apply_guardrails(user_input: str) -> bool:
     """
     # Rule 1: Skip short inputs (< 18 characters)
     if len(user_input.strip()) < 18:
-        logger.debug(f"Skipping guardrails for short input: {len(user_input)} characters")
+        logger.info(f"Skipping content moderation for short input ({len(user_input)} chars)")
         return False
     
     # Rule 2: Skip document-specific queries
@@ -123,7 +117,7 @@ def should_apply_guardrails(user_input: str) -> bool:
     ]
     
     if any(keyword in user_input_lower for keyword in document_keywords):
-        logger.debug(f"Skipping guardrails for document-specific query")
+        logger.info("Skipping content moderation for document-specific query")
         return False
     
     # Apply guardrails for all other cases
@@ -157,7 +151,6 @@ def cached_apply_guardrails(text: str, guardrail_id: Optional[str] = None, guard
     # Check cache first
     with guardrail_cache_lock:
         if cache_key in guardrail_cache:
-            logger.debug("Guardrail result found in cache")
             cached_result = guardrail_cache[cache_key].copy()
             cached_result["cached"] = True
             return cached_result
@@ -170,18 +163,24 @@ def cached_apply_guardrails(text: str, guardrail_id: Optional[str] = None, guard
     with guardrail_cache_lock:
         guardrail_cache[cache_key] = result.copy()
     
-    logger.debug("Guardrail result cached for future use")
     return result
 
 
 def get_bedrock_client() -> Any:
-    """Get Bedrock runtime client with request signing."""
-    try:
-        from .aws_utils import get_bedrock_client as get_signed_bedrock_client
-        return get_signed_bedrock_client(enable_signing=True)
-    except ImportError:
-        from aws_utils import get_bedrock_client as get_signed_bedrock_client
-        return get_signed_bedrock_client(enable_signing=True)
+    """Get Bedrock runtime client with SigV4 signing."""
+    import boto3
+    from botocore.config import Config
+    
+    config = Config(
+        retries={'max_attempts': 3, 'mode': 'adaptive'},
+        signature_version='v4'  # Explicit SigV4 signing
+    )
+    
+    return boto3.client(
+        'bedrock-runtime', 
+        region_name=os.environ.get('REGION', 'us-east-1'),
+        config=config
+    )
 
 
 def generate_embeddings(text: str, model_id: Optional[str] = None) -> List[float]:
@@ -220,7 +219,7 @@ def generate_embeddings(text: str, model_id: Optional[str] = None) -> List[float
         return response_body["embedding"]
         
     except Exception as e:
-        logger.error(f"Error generating embeddings: {e}")
+        logger.error("Error generating embeddings")
         raise
 
 
@@ -259,7 +258,7 @@ def generate_response(prompt: str, model_id: Optional[str] = None) -> str:
         return ModelConfig.extract_text_from_response(response_body, model_id)
         
     except Exception as e:
-        logger.error(f"Error generating response: {e}")
+        logger.error("Error generating response")
         raise
 
 
@@ -299,7 +298,7 @@ def generate_cached_response(prompt: str, model_id: Optional[str] = None, use_be
             # Enable prompt caching for system prompts and context
             if _is_rag_prompt(prompt):
                 request_body = _add_bedrock_caching_config(request_body, prompt)
-                logger.debug("AWS Bedrock prompt caching enabled for RAG prompt")
+                logger.info("Enabled prompt caching for RAG query")
         
         body = json.dumps(request_body)
         
@@ -332,7 +331,7 @@ def generate_cached_response(prompt: str, model_id: Optional[str] = None, use_be
         }
         
     except Exception as e:
-        logger.error(f"Error generating cached response: {e}")
+        logger.error("Error generating cached response")
         raise
 
 
@@ -439,7 +438,7 @@ def generate_streaming_response(prompt: str, model_id: Optional[str] = None) -> 
                     yield chunk_text
                     
     except Exception as e:
-        logger.error(f"Error generating streaming response: {e}")
+        logger.error("Error generating streaming response")
         raise
 
 
@@ -518,14 +517,14 @@ def apply_guardrails(text: str, guardrail_id: Optional[str] = None, guardrail_ve
                 "reasons": ["Guardrail not configured"]
             }
         else:
-            logger.error(f"Error applying guardrails: {e}")
+            logger.error("Error applying guardrails")
             # In case of error, allow content but log the issue
             return {
                 "blocked": False,
                 "reasons": [f"Guardrail error: {error_code}"]
             }
     except Exception as e:
-        logger.error(f"Unexpected error applying guardrails: {e}")
+        logger.error("Unexpected error applying guardrails")
         # In case of error, allow content but log the issue
         return {
             "blocked": False,

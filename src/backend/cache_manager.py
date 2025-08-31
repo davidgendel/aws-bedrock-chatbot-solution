@@ -136,14 +136,14 @@ class CacheManager:
                 value = cache.get(cache_key)
                 if value is not None:
                     self.stats[cache_type]["hits"] += 1
-                    logger.debug(f"Cache hit for {cache_type.value}: {cache_key[:20]}...")
+                    logger.debug(f"Cache hit for {cache_type.value}")
                     return value
                 else:
                     self.stats[cache_type]["misses"] += 1
-                    logger.debug(f"Cache miss for {cache_type.value}: {cache_key[:20]}...")
+                    logger.debug(f"Cache miss for {cache_type.value}")
                     return None
         except Exception as e:
-            logger.error(f"Error getting from cache: {e}")
+            logger.error("Error getting from cache")
             if cache_type in self.stats:
                 self.stats[cache_type]["misses"] += 1
             return None
@@ -175,12 +175,12 @@ class CacheManager:
                     logger.debug(f"TTL override requested but not supported: {ttl_override}")
                 
                 cache[cache_key] = value
-                logger.debug(f"Cached value for {cache_type.value}: {cache_key[:20]}...")
+                logger.debug(f"Cached value for {cache_type.value}")
                 return True
         except Exception as e:
-            logger.error(f"Error setting cache: {e}")
+            logger.error("Error setting cache")
             return False
-            logger.error(f"Error setting cache: {e}")
+            logger.error("Error setting cache")
             return False
     
     def delete(self, cache_type: CacheType, key_data: Union[str, Dict, List]) -> bool:
@@ -204,13 +204,13 @@ class CacheManager:
             with lock:
                 if cache_key in cache:
                     del cache[cache_key]
-                    logger.debug(f"Deleted from cache {cache_type.value}: {cache_key[:20]}...")
+                    logger.debug(f"Deleted from cache {cache_type.value}")
                     return True
                 return False
         except Exception as e:
-            logger.error(f"Error deleting from cache: {e}")
+            logger.error("Error deleting from cache")
             return False
-            logger.error(f"Error deleting from cache: {e}")
+            logger.error("Error deleting from cache")
             return False
     
     def clear(self, cache_type: Optional[CacheType] = None) -> bool:
@@ -239,7 +239,7 @@ class CacheManager:
             
             return True
         except Exception as e:
-            logger.error(f"Error clearing cache: {e}")
+            logger.error("Error clearing cache")
             return False
     
     def get_stats(self) -> Dict[str, Dict[str, Union[int, float]]]:

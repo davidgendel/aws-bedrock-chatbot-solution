@@ -154,7 +154,7 @@ def log_function_call(func: Callable) -> Callable:
         except Exception as e:
             # Log error
             duration_ms = (time.time() - start_time) * 1000
-            func_logger.error(f"Function failed: {func.__name__}: {str(e)}", extra={
+            func_logger.error(f"Function failed: {func.__name__}", extra={
                 'extra_fields': {
                     'function_error': True,
                     'function_name': func.__name__,

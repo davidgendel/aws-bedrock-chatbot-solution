@@ -42,9 +42,9 @@ class ChatbotRagStack(cdk.Stack):
         self.guardrail = self._create_bedrock_guardrail()
         self.lambda_role = self._create_lambda_role()
         self.layers = self._create_lambda_layers()  # Create layers early
+        self.log_groups = self._create_log_groups()
         self.vector_indexes = self._create_vector_indexes()
         self._complete_lambda_role_permissions()  # Complete permissions after vector indexes exist
-        self.log_groups = self._create_log_groups()
         self.lambda_functions = self._create_lambda_functions()
         self.api_gateway = self._create_api_gateway()
         self.websocket_api = self._create_websocket_api()
@@ -260,7 +260,8 @@ def handler(event, context):
         logger.error(f"Traceback: {{traceback.format_exc()}}")
         send_response(event, context, 'FAILED', reason=f"Unexpected error: {{e}}")
         return
-            """)
+            """),
+            log_group=self.log_groups["setup_logs"],
         )
         
         # Custom resource to trigger vector setup
@@ -534,7 +535,7 @@ def handler(event, context):
         return lambda_role
 
     def _create_log_groups(self) -> Dict[str, logs.LogGroup]:
-        """Create CloudWatch log groups with different retention periods."""
+        """Create CloudWatch log groups with 7-day retention."""
         return {
             "critical_logs": logs.LogGroup(
                 self, "CriticalLogs",
@@ -545,13 +546,19 @@ def handler(event, context):
             "standard_logs": logs.LogGroup(
                 self, "StandardLogs",
                 log_group_name="/aws/lambda/ChatbotRagStack-Standard",
-                retention=logs.RetentionDays.THREE_DAYS,
+                retention=logs.RetentionDays.ONE_WEEK,
                 removal_policy=cdk.RemovalPolicy.DESTROY,
             ),
             "debug_logs": logs.LogGroup(
                 self, "DebugLogs",
                 log_group_name="/aws/lambda/ChatbotRagStack-Debug",
-                retention=logs.RetentionDays.ONE_DAY,
+                retention=logs.RetentionDays.ONE_WEEK,
+                removal_policy=cdk.RemovalPolicy.DESTROY,
+            ),
+            "setup_logs": logs.LogGroup(
+                self, "SetupLogs",
+                log_group_name="/aws/lambda/ChatbotRagStack-VectorSetupCreator",
+                retention=logs.RetentionDays.ONE_WEEK,
                 removal_policy=cdk.RemovalPolicy.DESTROY,
             )
         }
@@ -741,7 +748,8 @@ def handler(event, context):
         )
 
         websocket_api = apigwv2.WebSocketApi(
-            self, "ChatbotWebSocketApi",
+            self, "ChatbotWebSocketApiClean",  # New logical ID to force complete recreation
+            route_selection_expression="$request.body.action",
             connect_route_options=apigwv2.WebSocketRouteOptions(
                 integration=apigwv2_integrations.WebSocketLambdaIntegration(
                     "ConnectIntegration", function_to_use
@@ -753,6 +761,10 @@ def handler(event, context):
                 )
             ),
         )
+
+        # Explicitly remove API key selection expression
+        cfn_websocket_api = websocket_api.node.default_child
+        cfn_websocket_api.add_property_deletion_override("ApiKeySelectionExpression")
 
         # Add routes
         websocket_api.add_route(
@@ -770,12 +782,15 @@ def handler(event, context):
             auto_deploy=True,
         )
 
-        # Grant permissions for WebSocket management
+        # Grant specific permissions for WebSocket management
         function_to_use.add_to_role_policy(
             iam.PolicyStatement(
-                actions=["execute-api:ManageConnections"],
+                actions=[
+                    "execute-api:ManageConnections",
+                    "execute-api:Invoke"
+                ],
                 resources=[
-                    f"arn:aws:execute-api:{self.region}:{self.account}:{websocket_api.api_id}/{websocket_stage.stage_name}/POST/@connections/*"
+                    f"arn:aws:execute-api:{self.region}:{self.account}:{websocket_api.api_id}/*"
                 ]
             )
         )
@@ -789,18 +804,21 @@ def handler(event, context):
     def _create_cloudfront_distribution(self) -> cloudfront.Distribution:
         """Create CloudFront distribution for website assets."""
         # Create Origin Access Control
-        oac = cloudfront.OriginAccessControl(
+        oac = cloudfront.CfnOriginAccessControl(
             self, "WebsiteOAC",
-            description="OAC for chatbot website S3 bucket",
-            origin_access_control_origin_type=cloudfront.OriginAccessControlOriginType.S3,
-            signing_behavior=cloudfront.OriginAccessControlSigningBehavior.ALWAYS,
-            signing_protocol=cloudfront.OriginAccessControlSigningProtocol.SIGV4,
+            origin_access_control_config=cloudfront.CfnOriginAccessControl.OriginAccessControlConfigProperty(
+                name="chatbot-website-oac",
+                description="OAC for chatbot website S3 bucket",
+                origin_access_control_origin_type="s3",
+                signing_behavior="always",
+                signing_protocol="sigv4",
+            )
         )
 
         # Create single S3 origin with OAC
         s3_origin = origins.S3BucketOrigin(
             bucket=self.s3_buckets["website_bucket"],
-            origin_access_control=oac
+            origin_id="S3Origin"
         )
 
         distribution = cloudfront.Distribution(
@@ -809,7 +827,7 @@ def handler(event, context):
                 origin=s3_origin,
                 viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
                 cache_policy=cloudfront.CachePolicy.CACHING_OPTIMIZED,
-                allowed_methods=cloudfront.AllowedMethods.ALLOW_GET_HEAD,
+                allowed_methods=cloudfront.AllowedMethods.ALLOW_ALL,
                 cached_methods=cloudfront.CachedMethods.CACHE_GET_HEAD,
                 compress=True,
             ),
@@ -835,6 +853,13 @@ def handler(event, context):
             comment="CloudFront distribution for Chatbot widget - US/CA only",
             enabled=True,
             http_version=cloudfront.HttpVersion.HTTP2,
+        )
+
+        # Configure OAC on the distribution
+        cfn_distribution = distribution.node.default_child
+        cfn_distribution.add_property_override(
+            "DistributionConfig.Origins.0.OriginAccessControlId", 
+            oac.ref
         )
 
         # Grant CloudFront access to the S3 bucket using bucket policy

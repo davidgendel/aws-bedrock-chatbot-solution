@@ -125,12 +125,10 @@ def handle_error(
         context=error_context
     )
     
-    # Log the error with full technical details (server-side only)
-    logger.log(log_level, f"[{error_type.value}] {str(error)}", extra={
+    # Log the error with minimal details (server-side only)
+    logger.log(log_level, f"[{error_type.value}] Error occurred", extra={
         "error_type": error_type.value,
-        "context": error_context,
-        "original_error": str(error),
-        "traceback": traceback.format_exc()
+        "context": error_context
     })
     
     return chatbot_error

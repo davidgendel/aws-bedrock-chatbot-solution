@@ -184,15 +184,13 @@ def get_s3_client() -> Any:
     global s3_client
     if s3_client is None:
         try:
-            # For vector storage, disable request signing to avoid signature issues
-            # This is safe for internal AWS service communication
-            from .aws_utils import get_s3_client as get_signed_s3_client
-            s3_client = get_signed_s3_client(enable_signing=False)
-            logger.info("Using S3 client with request signing disabled for vector storage")
+            from .aws_utils import get_s3_client
+            s3_client = get_s3_client()
+            logger.info("Using standard S3 client for vector storage")
         except ImportError:
-            from aws_utils import get_s3_client as get_signed_s3_client
-            s3_client = get_signed_s3_client(enable_signing=False)
-            logger.info("Using S3 client with request signing disabled for vector storage")
+            from aws_utils import get_s3_client
+            s3_client = get_s3_client()
+            logger.info("Using standard S3 client for vector storage")
     return s3_client
 
 
@@ -212,7 +210,7 @@ def get_s3_vectors_client() -> Any:
                 region = get_aws_region()
             
             s3_vectors_client = boto3.client('s3vectors', region_name=region)
-            logger.info("Using dedicated S3 Vectors client (no request signing)")
+            logger.info("Using S3 Vectors client (service does not yet support SigV4 signing)")
         except Exception as e:
             logger.error(f"Failed to create S3 Vectors client: {e}")
             raise

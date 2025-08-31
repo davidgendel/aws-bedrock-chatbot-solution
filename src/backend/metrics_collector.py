@@ -318,7 +318,7 @@ class MetricsCollector:
             # Import here to avoid circular imports
             from .aws_utils import get_cloudwatch_client
             
-            cloudwatch_client = get_cloudwatch_client(enable_signing=True)
+            cloudwatch_client = get_cloudwatch_client()
             
             cloudwatch_client.put_metric_data(
                 Namespace=batch.namespace,

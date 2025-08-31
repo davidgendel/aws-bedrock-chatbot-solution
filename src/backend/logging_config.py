@@ -195,8 +195,8 @@ def _configure_aws_loggers():
     logging.getLogger('urllib3').setLevel(logging.WARNING)
     
     # Keep important AWS events at INFO level
-    logging.getLogger('botocore.credentials').setLevel(logging.INFO)
-    logging.getLogger('botocore.auth').setLevel(logging.INFO)
+    logging.getLogger('botocore.credentials').setLevel(logging.WARNING)
+    logging.getLogger('botocore.auth').setLevel(logging.WARNING)
 
 
 def _configure_third_party_loggers():

@@ -17,7 +17,7 @@ try:
     from .aws_utils import get_aws_region, get_aws_client
     from .bedrock_utils import (
         apply_guardrails, generate_embeddings, generate_response, cached_apply_guardrails,
-        generate_cached_response, get_cached_context, cache_context
+        generate_cached_response, get_cached_context, cache_context, get_bedrock_client
     )
     from .cache_manager import cache_manager, CacheType, get_cached_response, cache_response
     from .error_handler import (
@@ -37,7 +37,7 @@ except ImportError:
     from aws_utils import get_aws_region, get_aws_client
     from bedrock_utils import (
         apply_guardrails, generate_embeddings, generate_response, cached_apply_guardrails,
-        generate_cached_response, get_cached_context, cache_context
+        generate_cached_response, get_cached_context, cache_context, get_bedrock_client
     )
     from cache_manager import cache_manager, CacheType, get_cached_response, cache_response
     from error_handler import (
@@ -211,14 +211,14 @@ def handle_chat_request(body: Dict[str, Any]) -> Dict[str, Any]:
         # Check context cache first
         cached_docs = get_cached_context(embedding, limit=3, threshold=0.45)
         if cached_docs:
-            logger.debug("Using cached document context")
+            logger.info("Using cached document context")
             relevant_docs = cached_docs
         else:
             # Retrieve relevant documents using S3 Vectors
             relevant_docs = query_similar_vectors(embedding, limit=3, similarity_threshold=0.45)
             # Cache the retrieved context
             cache_context(embedding, limit=3, threshold=0.45, context=relevant_docs)
-            logger.debug("Cached new document context")
+            logger.info("Cached document context")
         
         # Construct prompt with retrieved documents
         context = ""
@@ -363,6 +363,16 @@ def send_to_connection(api_client, connection_id: str, data: Dict[str, Any], rai
     import time
     
     try:
+        # First, try to get connection info to validate it's still active
+        try:
+            # This is a simple way to test if the connection is valid
+            api_client.get_connection(ConnectionId=connection_id)
+        except api_client.exceptions.GoneException:
+            logger.info(f"Connection {connection_id} is gone")
+            return False
+        except Exception as e:
+            # Continue anyway - some APIs don't support get_connection
+        
         api_client.post_to_connection(
             ConnectionId=connection_id,
             Data=json.dumps(data).encode("utf-8")
@@ -378,6 +388,8 @@ def send_to_connection(api_client, connection_id: str, data: Dict[str, Any], rai
         return send_to_connection(api_client, connection_id, data, raise_error)
     except Exception as e:
         logger.error(f"Error sending message to connection {connection_id}: {e}")
+        logger.error(f"API client type: {type(api_client)}")
+        logger.error(f"API client endpoint: {getattr(api_client, '_endpoint', 'unknown')}")
         if raise_error:
             raise
         return False
@@ -545,7 +557,7 @@ def handle_websocket_event(event: Dict[str, Any]) -> Dict[str, Any]:
         try:
             api_client = _initialize_websocket_api_client(event)
         except Exception as e:
-            logger.error(f"Failed to initialize WebSocket API client for connection {connection_id}: {e}")
+            logger.error(f"Failed to initialize WebSocket API client for connection {connection_id}")
             return {"statusCode": 500}
         
         # Handle different WebSocket route keys
@@ -593,37 +605,59 @@ def _cleanup_websocket_connection(connection_id: str) -> None:
 def _initialize_websocket_api_client(event: Dict[str, Any]) -> Any:
     """Initialize API Gateway Management API client with error handling."""
     try:
+        logger.info("Starting WebSocket API client initialization")
+        
         # Validate event structure
         if not event or "requestContext" not in event:
             raise ValueError("Invalid event structure: missing requestContext")
         
         request_context = event["requestContext"]
+        logger.info("Got request context")
         
-        # Validate required fields
-        if "domainName" not in request_context:
-            raise ValueError("Invalid event structure: missing domainName")
-        if "stage" not in request_context:
-            raise ValueError("Invalid event structure: missing stage")
-        
-        domain = request_context["domainName"]
-        stage = request_context["stage"]
+        # Get domain and stage from request context or construct from apiId
+        domain = request_context.get("domainName")
+        stage = request_context.get("stage", "prod")
+        api_id = request_context.get("apiId")
         region = get_aws_region()
         
-        # Validate domain and stage values
-        if not domain or not isinstance(domain, str):
-            raise ValueError("Invalid domain name")
-        if not stage or not isinstance(stage, str):
-            raise ValueError("Invalid stage name")
+        logger.info(f"Values - Domain: {domain}, Stage: {stage}, API ID: {api_id}")
         
-        return get_aws_client(
-            "apigatewaymanagementapi",
-            region_name=region,
-            enable_signing=True,
-            endpoint_url=f"https://{domain}/{stage}"
+        # If domainName is missing, construct it from apiId
+        if not domain and api_id:
+            domain = f"{api_id}.execute-api.{region}.amazonaws.com"
+            logger.info(f"Constructed domain: {domain}")
+        
+        # Validate we have required values
+        if not domain:
+            raise ValueError("Cannot determine API Gateway domain")
+        if not stage:
+            raise ValueError("Cannot determine API Gateway stage")
+        
+        logger.info("Creating WebSocket API client")
+        
+        # API Gateway Management API needs specific configuration without SigV4
+        import boto3
+        from botocore.config import Config
+        
+        # Create config without SigV4 for API Gateway Management API
+        config = Config(
+            retries={'max_attempts': 3, 'mode': 'adaptive'},
+            max_pool_connections=50
+            # No signature_version specified - let it use default
         )
+        
+        client = boto3.client(
+            'apigatewaymanagementapi',
+            region_name=region,
+            endpoint_url=f"https://{domain}/{stage}",
+            config=config
+        )
+        
+        return client
+        
     except Exception as e:
-        logger.error(f"Error initializing WebSocket API client: {e}")
-        raise
+        logger.error("Error initializing WebSocket API client")
+        raise ValueError("Failed to initialize WebSocket API client")
 
 
 def _handle_websocket_message(event: Dict[str, Any], connection_id: str, api_client) -> Dict[str, Any]:
@@ -700,13 +734,13 @@ def _process_websocket_message_and_stream(message: str, connection_id: str, api_
         # Check context cache first
         cached_docs = get_cached_context(embeddings, limit=5, threshold=0.45)
         if cached_docs:
-            logger.debug("Using cached document context for WebSocket")
+            logger.info("Using cached document context")
             relevant_docs = cached_docs
         else:
             relevant_docs = query_similar_vectors(embeddings, limit=5, similarity_threshold=0.45)
             # Cache the retrieved context
             cache_context(embeddings, limit=5, threshold=0.45, context=relevant_docs)
-            logger.debug("Cached new document context for WebSocket")
+            logger.info("Cached document context")
         
         # Construct prompt
         if relevant_docs:
@@ -741,6 +775,8 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     Returns:
         Lambda response
     """
+    logger.info("Processing request")
+    
     # Check if this is a WebSocket connection
     if event.get("requestContext", {}).get("connectionId"):
         return handle_websocket_event(event)
