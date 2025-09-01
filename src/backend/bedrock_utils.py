@@ -337,12 +337,10 @@ def generate_cached_response(prompt: str, model_id: Optional[str] = None, use_be
 
 def _supports_bedrock_caching(model_id: str) -> bool:
     """Check if model supports AWS Bedrock native prompt caching."""
-    # AWS Bedrock prompt caching is supported by Claude 3 models
+    # AWS Bedrock prompt caching is supported by Claude models
     supported_models = [
-        "anthropic.claude-3-haiku-20240307-v1:0",
-        "anthropic.claude-3-sonnet-20240229-v1:0",
-        "anthropic.claude-3-opus-20240229-v1:0",
-        "anthropic.claude-3-5-sonnet-20240620-v1:0"
+        "anthropic.claude-sonnet-4-20250514-v1:0",
+        "anthropic.claude-3-5-haiku-20241022-v1:0"
     ]
     return model_id in supported_models
 

@@ -181,8 +181,6 @@ class ConfigValidator:
         model_id = bedrock_config.get("modelId", "")
         if not model_id:
             self.errors.append("bedrock.modelId is required")
-        elif not model_id.startswith("amazon."):
-            self.warnings.append("bedrock.modelId should typically start with 'amazon.' for Amazon models")
         
         # Guardrails validation
         guardrails = bedrock_config.get("guardrails", {})

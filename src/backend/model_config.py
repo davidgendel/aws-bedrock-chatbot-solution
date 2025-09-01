@@ -9,8 +9,11 @@ from enum import Enum
 class ModelType(Enum):
     """Supported model types."""
     NOVA_LITE = "amazon.nova-lite-v1:0"
-    CLAUDE_3_HAIKU = "anthropic.claude-3-haiku-20240307-v1:0"
-    CLAUDE_3_SONNET = "anthropic.claude-3-sonnet-20240229-v1:0"
+    NOVA_PRO = "amazon.nova-pro-v1:0"
+    AI21_JAMBA_MINI = "ai21.jamba-1-5-mini-v1:0"
+    META_LLAMA4_SCOUT = "meta.llama4-scout-17b-instruct-v1:0"
+    CLAUDE_SONNET_4 = "anthropic.claude-sonnet-4-20250514-v1:0"
+    CLAUDE_3_5_HAIKU = "anthropic.claude-3-5-haiku-20241022-v1:0"
 
 
 class ModelConfig:
@@ -28,7 +31,37 @@ class ModelConfig:
             "streaming_supported": True,
             "embedding_model": "amazon.titan-embed-text-v2:0"
         },
-        ModelType.CLAUDE_3_HAIKU.value: {
+        ModelType.NOVA_PRO.value: {
+            "type": "nova",
+            "max_tokens": 1000,
+            "temperature": 0.7,
+            "top_p": 0.9,
+            "stop_sequences": [],
+            "request_format": "nova",
+            "streaming_supported": True,
+            "embedding_model": "amazon.titan-embed-text-v2:0"
+        },
+        ModelType.AI21_JAMBA_MINI.value: {
+            "type": "ai21",
+            "max_tokens": 1000,
+            "temperature": 0.7,
+            "top_p": 0.9,
+            "stop_sequences": [],
+            "request_format": "ai21",
+            "streaming_supported": True,
+            "embedding_model": "amazon.titan-embed-text-v2:0"
+        },
+        ModelType.META_LLAMA4_SCOUT.value: {
+            "type": "meta",
+            "max_tokens": 1000,
+            "temperature": 0.7,
+            "top_p": 0.9,
+            "stop_sequences": [],
+            "request_format": "meta",
+            "streaming_supported": True,
+            "embedding_model": "amazon.titan-embed-text-v2:0"
+        },
+        ModelType.CLAUDE_SONNET_4.value: {
             "type": "anthropic",
             "max_tokens": 1000,
             "temperature": 0.7,
@@ -38,7 +71,7 @@ class ModelConfig:
             "streaming_supported": True,
             "embedding_model": "amazon.titan-embed-text-v2:0"
         },
-        ModelType.CLAUDE_3_SONNET.value: {
+        ModelType.CLAUDE_3_5_HAIKU.value: {
             "type": "anthropic",
             "max_tokens": 1000,
             "temperature": 0.7,
@@ -116,6 +149,20 @@ class ModelConfig:
                     {"role": "user", "content": prompt}
                 ]
             }
+        elif config["type"] == "ai21":
+            return {
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": config["max_tokens"],
+                "temperature": config["temperature"],
+                "top_p": config["top_p"]
+            }
+        elif config["type"] == "meta":
+            return {
+                "prompt": prompt,
+                "max_gen_len": config["max_tokens"],
+                "temperature": config["temperature"],
+                "top_p": config["top_p"]
+            }
         else:
             raise ValueError(f"Unsupported model type: {config['type']}")
     
@@ -137,6 +184,13 @@ class ModelConfig:
             return ""
         elif config["type"] == "anthropic":
             return response_data.get("completion", "")
+        elif config["type"] == "ai21":
+            choices = response_data.get("choices", [])
+            if choices:
+                return choices[0].get("message", {}).get("content", "")
+            return ""
+        elif config["type"] == "meta":
+            return response_data.get("generation", "")
         else:
             raise ValueError(f"Unsupported model type: {config['type']}")
     
@@ -155,6 +209,10 @@ class ModelConfig:
             return delta.get("text", "")
         elif config["type"] == "anthropic":
             return chunk_data.get("completion", "")
+        elif config["type"] == "ai21":
+            return chunk_data.get("choices", [{}])[0].get("delta", {}).get("content", "")
+        elif config["type"] == "meta":
+            return chunk_data.get("generation", "")
         else:
             raise ValueError(f"Unsupported model type: {config['type']}")
     
