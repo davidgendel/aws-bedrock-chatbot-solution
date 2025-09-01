@@ -7,7 +7,7 @@ Deploy an AI chatbot that learns from your documents in 15-20 minutes. **Startin
 ## 🚀 Quick Start
 
 ```bash
-git clone https://github.com/your-github-username/aws-bedrock-chatbot-solution.git
+git clone https://github.com/davidgendel/aws-bedrock-chatbot-solution.git
 cd aws-bedrock-chatbot-solution
 ./chatbot deploy
 ```
