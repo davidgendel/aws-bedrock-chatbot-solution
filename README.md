@@ -38,6 +38,16 @@ cd aws-bedrock-chatbot-solution
 - Git installed
 - Docker installed
 
+There are two example scripts to help you install the dependencies - these scripts are not required. You can install the project dependencies however you like. If you are running a Fedora or Ubuntu based system, you can leverage these scripts:
+
+```bash
+# For Ubuntu/Debian systems
+./scripts/install-deps-ubuntu.sh
+
+# For Fedora/RHEL systems  
+./scripts/install-deps-fedora.sh
+```
+
 ## 🛠️ Commands
 
 ```bash
