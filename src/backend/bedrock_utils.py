@@ -295,10 +295,9 @@ def generate_cached_response(prompt: str, model_id: Optional[str] = None, use_be
         
         # Add AWS Bedrock native prompt caching for supported models
         if use_bedrock_caching and _supports_bedrock_caching(model_id):
-            # Enable prompt caching for system prompts and context
-            if _is_rag_prompt(prompt):
+            if _meets_cache_token_minimum(prompt, model_id) and _is_rag_prompt(prompt):
                 request_body = _add_bedrock_caching_config(request_body, prompt)
-                logger.info("Enabled prompt caching for RAG query")
+                logger.info(f"Enabled prompt caching for {model_id}")
         
         body = json.dumps(request_body)
         
@@ -337,22 +336,40 @@ def generate_cached_response(prompt: str, model_id: Optional[str] = None, use_be
 
 def _supports_bedrock_caching(model_id: str) -> bool:
     """Check if model supports AWS Bedrock native prompt caching."""
-    # AWS Bedrock prompt caching is supported by Claude models
     supported_models = [
         "anthropic.claude-sonnet-4-20250514-v1:0",
-        "anthropic.claude-3-5-haiku-20241022-v1:0"
+        "anthropic.claude-3-5-haiku-20241022-v1:0",
+        "amazon.nova-lite-v1:0",
+        "amazon.nova-pro-v1:0"
     ]
     return model_id in supported_models
 
 
+def _meets_cache_token_minimum(text: str, model_id: str) -> bool:
+    """Check if text meets minimum token requirement for caching."""
+    char_count = len(text)
+    estimated_tokens = char_count // 4
+    
+    if model_id.startswith("amazon.nova"):
+        return estimated_tokens >= 1000
+    
+    if "claude-3-5-haiku" in model_id:
+        return estimated_tokens >= 2048
+    else:
+        return estimated_tokens >= 1024
+    
+    return False
+
+
 def _is_rag_prompt(prompt: str) -> bool:
     """Check if prompt is a RAG prompt with context."""
-    # Simple heuristic to identify RAG prompts
     rag_indicators = [
         "Context:",
         "Here is some relevant information",
         "Document",
-        "based on the information provided"
+        "based on the information provided",
+        "relevant documents",
+        "retrieved context"
     ]
     return any(indicator in prompt for indicator in rag_indicators)
 
@@ -360,17 +377,25 @@ def _is_rag_prompt(prompt: str) -> bool:
 def _add_bedrock_caching_config(request_body: Dict[str, Any], prompt: str) -> Dict[str, Any]:
     """Add AWS Bedrock native caching configuration to request body."""
     try:
-        # For Claude models, add caching configuration
-        if "messages" in request_body:
-            # Claude format - add cache control to system message or context
+        if "messages" in request_body and "inferenceConfig" in request_body:
             messages = request_body["messages"]
             
-            # Find system message or first user message with context
+            for message in messages:
+                if message.get("role") == "user":
+                    content = message.get("content", [])
+                    if content and len(content) > 0:
+                        last_content = content[-1]
+                        if "text" in last_content and len(last_content["text"]) >= 1000:
+                            last_content["cachePoint"] = {"type": "default"}
+                            break
+        
+        elif "messages" in request_body:
+            messages = request_body["messages"]
+            
             for message in messages:
                 if (message.get("role") == "system" or 
                     (message.get("role") == "user" and "Context:" in message.get("content", ""))):
                     
-                    # Add cache control for prompt caching
                     if isinstance(message["content"], str):
                         message["content"] = [
                             {
@@ -380,7 +405,6 @@ def _add_bedrock_caching_config(request_body: Dict[str, Any], prompt: str) -> Di
                             }
                         ]
                     elif isinstance(message["content"], list):
-                        # Add cache control to the last content block
                         if message["content"]:
                             message["content"][-1]["cache_control"] = {"type": "ephemeral"}
                     break
@@ -624,6 +648,16 @@ def get_all_bedrock_cache_stats() -> Dict[str, Any]:
             len(prompt_cache) + 
             len(context_cache)
         )
+    }
+
+
+def get_nova_cache_stats() -> Dict[str, Any]:
+    """Get Nova-specific cache statistics."""
+    return {
+        "nova_lite_cache_enabled": _supports_bedrock_caching("amazon.nova-lite-v1:0"),
+        "nova_pro_cache_enabled": _supports_bedrock_caching("amazon.nova-pro-v1:0"),
+        "cache_token_minimum": 1000,
+        "max_cache_checkpoints": 4
     }
 
 

@@ -168,8 +168,9 @@ context_cache = TTLCache(maxsize=300, ttl=7200)     # 2 hours
 Automatically enabled for:
 - RAG prompts with context
 - Claude 3 family models
-- Amazon Nova family models
+- Amazon Nova family models (Lite, Pro, Premier, Micro)
 - Prompts with system messages
+- Prompts meeting minimum token requirements (1K for Nova, 1K-2K for Claude)
 
 ## **🔧 Usage Examples**
 

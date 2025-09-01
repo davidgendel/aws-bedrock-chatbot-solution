@@ -17,7 +17,7 @@ cd aws-bedrock-chatbot-solution
 
 ## ✨ Features
 
-- **Amazon Nova Lite** for fast AI responses
+- **Amazon Nova Lite** for fast AI responses with native prompt caching
 - **S3 Vectors** for scalable document embeddings storage
 - **AWS Request Signing** with SigV4 for enhanced security
 - **One-command vector optimization** with built-in performance monitoring

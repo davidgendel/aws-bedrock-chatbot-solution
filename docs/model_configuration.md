@@ -36,8 +36,8 @@ To change the model, update the `bedrock.modelId` field in `config.json`:
 
 | Model | Streaming | Bedrock Caching | Multimodal |
 |-------|-----------|-----------------|------------|
-| Nova Lite | ✅ | ❌ | ✅ (Text, Image, Video) |
-| Nova Pro | ✅ | ❌ | ✅ (Text, Image, Video) |
+| Nova Lite | ✅ | ✅ | ✅ (Text, Image, Video) |
+| Nova Pro | ✅ | ✅ | ✅ (Text, Image, Video) |
 | Jamba 1.5 Mini | ✅ | ❌ | ❌ (Text only) |
 | Llama 4 Scout 17B | ✅ | ❌ | ✅ (Text, Image) |
 | Claude Sonnet 4 | ✅ | ✅ | ✅ (Text, Image) |
@@ -62,5 +62,7 @@ After changing the model configuration:
 ## Notes
 
 - All models use Amazon Titan Embeddings v2 for document vectorization
-- Bedrock native caching is only available for Claude models
+- Bedrock native caching is available for Nova and Claude models
+- Nova models require 1K token minimum for prompt caching
+- Claude models require 1K-2K token minimum for prompt caching
 - Model availability may vary by AWS region
