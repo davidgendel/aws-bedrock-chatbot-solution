@@ -49,7 +49,7 @@ def create_chunks(
     overlap_size: int = None
 ) -> List[Dict[str, Any]]:
     """
-    Create chunks using advanced chunking strategies.
+    Create chunks using advanced semantic-aware chunking strategies.
     
     Args:
         content: Either extracted content dict or text string
@@ -62,17 +62,27 @@ def create_chunks(
     """
     # Handle both calling patterns
     if isinstance(content, dict):
-        # New pattern: extracted_content dict
         text = content["text"]
         structure = content.get("structure", [])
         metadata = content.get("metadata", metadata or {})
     else:
-        # Legacy pattern: text string with separate metadata
         text = content
         structure = []
         metadata = metadata or {}
     
-    # Configuration for chunking
+    # Adaptive configuration based on content analysis
+    config = analyze_content_and_configure(text, max_chunk_size, overlap_size)
+    
+    # Use structure-aware chunking if available, otherwise semantic chunking
+    if structure:
+        return create_structured_chunks(text, structure, metadata, config)
+    else:
+        return create_semantic_chunks(text, metadata, config)
+
+
+def analyze_content_and_configure(text: str, max_chunk_size: int = None, overlap_size: int = None) -> Dict[str, Any]:
+    """Analyze content to determine optimal chunking configuration."""
+    # Base configuration
     config = {
         "targetChunkSize": DEFAULT_CHUNK_SIZE,
         "maxChunkSize": max_chunk_size or MAX_CHUNK_SIZE,
@@ -81,19 +91,31 @@ def create_chunks(
         "sentenceEndingChars": ['.', '!', '?', '\n\n']
     }
     
-    # If we have structure information, use it for semantic chunking
-    if structure:
-        return create_structured_chunks(text, structure, metadata, config)
-    else:
-        # Fall back to semantic chunking without structure
-        return create_semantic_chunks(text, metadata, config)
+    # Analyze content characteristics
+    lines = text.split('\n')
+    avg_line_length = sum(len(line) for line in lines) / max(len(lines), 1)
+    
+    # Detect content type patterns
+    dialogue_ratio = len(re.findall(r'"[^"]*"', text)) / max(len(text.split()), 1)
+    paragraph_breaks = text.count('\n\n')
+    
+    # Adjust chunk sizes based on content density
+    if dialogue_ratio > 0.1:  # Dialogue-heavy content
+        config["targetChunkSize"] = int(config["targetChunkSize"] * 0.8)  # Smaller chunks
+        config["overlapSize"] = int(config["overlapSize"] * 1.2)  # More overlap
+    elif avg_line_length > 100:  # Dense prose
+        config["targetChunkSize"] = int(config["targetChunkSize"] * 1.2)  # Larger chunks
+    elif paragraph_breaks > len(lines) * 0.3:  # Well-structured text
+        config["targetChunkSize"] = int(config["targetChunkSize"] * 1.1)  # Slightly larger
+    
+    return config
 
 
 def create_structured_chunks(
     text: str, structure: List[Dict[str, Any]], metadata: Dict[str, Any], config: Dict[str, Any]
 ) -> List[Dict[str, Any]]:
     """
-    Create chunks based on document structure (headings).
+    Create chunks based on document structure with semantic awareness.
     
     Args:
         text: Document text
@@ -105,64 +127,194 @@ def create_structured_chunks(
         List of document chunks
     """
     chunks = []
-    
-    # Sort structure elements by their position in the text
     sorted_structure = sorted(structure, key=lambda x: x["startPosition"])
+    sorted_structure.append({"startPosition": len(text), "level": 0, "text": "END_OF_DOCUMENT"})
     
-    # Add end of document as the final position
-    sorted_structure.append({
-        "startPosition": len(text),
-        "level": 0,
-        "text": "END_OF_DOCUMENT"
-    })
-    
-    # Process each section defined by headings
     for i in range(len(sorted_structure) - 1):
         current_heading = sorted_structure[i]
         next_heading = sorted_structure[i + 1]
         
-        # Extract section text
         section_start = current_heading["startPosition"]
         section_end = next_heading["startPosition"]
-        section_text = text[section_start:section_end]
+        section_text = text[section_start:section_end].strip()
         
-        # Skip empty sections
-        if not section_text.strip():
+        if not section_text:
             continue
         
-        # For very short sections, keep them as a single chunk
-        if len(section_text) <= config["maxChunkSize"]:
+        # Determine section importance and adjust chunk size accordingly
+        section_importance = calculate_section_importance(current_heading, section_text)
+        adjusted_config = adjust_config_for_section(config, section_importance, len(section_text))
+        
+        if len(section_text) <= adjusted_config["maxChunkSize"]:
+            # Keep short sections intact
             chunks.append({
                 "content": section_text,
                 "type": "section",
                 "heading": current_heading["text"],
-                "importanceScore": calculate_importance_score(current_heading, section_text),
+                "importanceScore": section_importance,
                 "metadata": {
                     "headingLevel": current_heading["level"],
                     "sectionIndex": i,
+                    "sectionLength": len(section_text),
                     **metadata
                 }
             })
         else:
-            # For longer sections, split into semantic chunks
-            section_chunks = split_text_into_chunks_nlp(section_text, config)
+            # Split long sections with semantic awareness
+            section_chunks = split_section_semantically(section_text, adjusted_config)
             
-            # Add heading and metadata to each chunk
             for chunk_index, chunk in enumerate(section_chunks):
+                chunk_importance = section_importance * (1.0 - chunk_index * 0.1)  # First chunks more important
                 chunks.append({
                     "content": chunk,
                     "type": "section_chunk",
                     "heading": current_heading["text"],
-                    "importanceScore": calculate_importance_score(current_heading, chunk, chunk_index),
+                    "importanceScore": max(chunk_importance, 0.5),
                     "metadata": {
                         "headingLevel": current_heading["level"],
                         "sectionIndex": i,
                         "chunkIndex": chunk_index,
+                        "totalChunksInSection": len(section_chunks),
                         **metadata
                     }
                 })
     
     return chunks
+
+
+def calculate_section_importance(heading: Dict[str, Any], text: str) -> float:
+    """Calculate importance score for a section based on heading and content."""
+    score = 1.0
+    
+    # Higher score for higher-level headings
+    if heading.get("level"):
+        score += (7 - min(heading["level"], 6)) * 0.15
+    
+    # Analyze heading text for importance indicators
+    heading_text = heading.get("text", "").lower()
+    important_keywords = ["introduction", "conclusion", "summary", "overview", "key", "important", "main"]
+    if any(keyword in heading_text for keyword in important_keywords):
+        score += 0.3
+    
+    # Analyze content density
+    sentences = len(re.findall(r'[.!?]+', text))
+    words = len(text.split())
+    if words > 0:
+        sentence_density = sentences / words * 100
+        if 3 <= sentence_density <= 8:  # Good information density
+            score += 0.2
+    
+    return min(score, 2.0)
+
+
+def adjust_config_for_section(config: Dict[str, Any], importance: float, section_length: int) -> Dict[str, Any]:
+    """Adjust chunking configuration based on section characteristics."""
+    adjusted = config.copy()
+    
+    # Important sections get larger chunks to preserve context
+    if importance > 1.5:
+        adjusted["targetChunkSize"] = int(config["targetChunkSize"] * 1.3)
+        adjusted["maxChunkSize"] = int(config["maxChunkSize"] * 1.2)
+        adjusted["overlapSize"] = int(config["overlapSize"] * 1.5)
+    
+    # Very long sections may need smaller chunks for manageability
+    elif section_length > config["maxChunkSize"] * 3:
+        adjusted["targetChunkSize"] = int(config["targetChunkSize"] * 0.9)
+    
+    return adjusted
+
+
+def split_section_semantically(text: str, config: Dict[str, Any]) -> List[str]:
+    """Split a section into chunks while preserving semantic boundaries."""
+    try:
+        sentences = sent_tokenize(text)
+    except Exception:
+        return split_text_into_chunks(text, config)
+    
+    # Find natural breakpoints within the section
+    breakpoints = detect_semantic_breakpoints(sentences)
+    
+    chunks = []
+    current_chunk = ""
+    current_sentences = []
+    
+    for i, sentence in enumerate(sentences):
+        # Check for semantic break
+        should_break = (
+            i in breakpoints and 
+            current_chunk and 
+            len(current_chunk) >= config["minChunkSize"]
+        )
+        
+        # Force break if too large
+        force_break = len(current_chunk) + len(sentence) > config["maxChunkSize"] and current_chunk
+        
+        if should_break or force_break:
+            chunks.append(current_chunk.strip())
+            
+            # Preserve context with semantic overlap
+            overlap_sentences = get_contextual_overlap(current_sentences, config["overlapSize"], sentence)
+            current_chunk = " ".join(overlap_sentences)
+            current_sentences = overlap_sentences.copy()
+        
+        # Add sentence
+        if current_chunk:
+            current_chunk += " " + sentence
+        else:
+            current_chunk = sentence
+        current_sentences.append(sentence)
+    
+    # Add final chunk
+    if current_chunk.strip():
+        if len(current_chunk) >= config["minChunkSize"] or not chunks:
+            chunks.append(current_chunk.strip())
+        elif chunks:
+            chunks[-1] += " " + current_chunk.strip()
+    
+    return chunks
+
+
+def get_contextual_overlap(sentences: List[str], overlap_size: int, next_sentence: str) -> List[str]:
+    """Get overlap that maintains context continuity."""
+    if not sentences:
+        return []
+    
+    # Try to include complete thoughts in overlap
+    overlap_sentences = []
+    char_count = 0
+    
+    # Work backwards, but prioritize complete thoughts
+    for i in range(len(sentences) - 1, -1, -1):
+        sentence = sentences[i]
+        if char_count + len(sentence) <= overlap_size:
+            overlap_sentences.insert(0, sentence)
+            char_count += len(sentence)
+            
+            # If this sentence provides good context for the next sentence, prefer it
+            if has_contextual_connection(sentence, next_sentence):
+                break
+        else:
+            break
+    
+    return overlap_sentences or [sentences[-1]] if sentences else []
+
+
+def has_contextual_connection(prev_sentence: str, next_sentence: str) -> bool:
+    """Check if two sentences have contextual connection."""
+    # Look for pronouns, references, or continuing thoughts
+    next_lower = next_sentence.lower()
+    
+    # Pronouns and references
+    references = ['he', 'she', 'it', 'they', 'this', 'that', 'these', 'those']
+    if any(next_lower.startswith(ref) for ref in references):
+        return True
+    
+    # Continuing conjunctions
+    continuations = ['and', 'but', 'however', 'therefore', 'thus', 'moreover']
+    if any(next_lower.startswith(conj) for conj in continuations):
+        return True
+    
+    return False
 
 
 def create_semantic_chunks(
@@ -210,7 +362,7 @@ def create_semantic_chunks(
 
 def split_text_into_chunks_nlp(text: str, config: Dict[str, Any]) -> List[str]:
     """
-    Split text into chunks at semantic boundaries using NLP.
+    Split text into chunks at semantic boundaries using advanced NLP techniques.
     
     Args:
         text: Document text
@@ -219,59 +371,154 @@ def split_text_into_chunks_nlp(text: str, config: Dict[str, Any]) -> List[str]:
     Returns:
         List of text chunks
     """
-    # Tokenize text into sentences using NLTK
     try:
         sentences = sent_tokenize(text)
     except Exception as e:
-        # Fall back to simple splitting if NLTK fails
         logger.warning(f"NLTK sentence tokenization failed: {e}. Falling back to simple splitting.")
         return split_text_into_chunks(text, config)
     
+    # Detect semantic breakpoints
+    breakpoints = detect_semantic_breakpoints(sentences)
+    
     chunks = []
     current_chunk = ""
+    current_sentences = []
     
-    for sentence in sentences:
-        # If adding this sentence would exceed the max chunk size, start a new chunk
-        if len(current_chunk) + len(sentence) > config["maxChunkSize"] and current_chunk:
-            chunks.append(current_chunk)
-            
-            # Start new chunk with overlap
-            # Find a good sentence boundary for overlap
-            overlap_text = current_chunk[-config["overlapSize"]:] if config["overlapSize"] < len(current_chunk) else current_chunk
-            
-            # Try to find a sentence boundary in the overlap
-            try:
-                overlap_sentences = sent_tokenize(overlap_text)
-                if len(overlap_sentences) > 1:
-                    # Use the last sentence(s) as overlap
-                    current_chunk = overlap_sentences[-1]
-                else:
-                    # Just use the overlap text
-                    current_chunk = overlap_text
-            except Exception as e:
-                logger.warning(f"Sentence tokenization failed in overlap processing: {e}")
-                # Just use the overlap text as-is
-                current_chunk = overlap_text
+    for i, sentence in enumerate(sentences):
+        # Check if we should break here based on semantic analysis
+        should_break = (
+            i in breakpoints and 
+            current_chunk and 
+            len(current_chunk) >= config["minChunkSize"]
+        )
         
-        # Add the sentence to the current chunk
-        current_chunk += " " + sentence if current_chunk else sentence
+        # Force break if we exceed max size
+        force_break = len(current_chunk) + len(sentence) > config["maxChunkSize"] and current_chunk
         
-        # If we've reached target chunk size, create a chunk
-        if len(current_chunk) >= config["targetChunkSize"]:
-            chunks.append(current_chunk)
+        if should_break or force_break:
+            # Finalize current chunk
+            chunks.append(current_chunk.strip())
+            
+            # Start new chunk with semantic overlap
+            overlap_sentences = get_semantic_overlap(current_sentences, config["overlapSize"])
+            current_chunk = " ".join(overlap_sentences)
+            current_sentences = overlap_sentences.copy()
+        
+        # Add sentence to current chunk
+        if current_chunk:
+            current_chunk += " " + sentence
+        else:
+            current_chunk = sentence
+        current_sentences.append(sentence)
+        
+        # Create chunk if we reach target size and have a good breakpoint
+        if (len(current_chunk) >= config["targetChunkSize"] and 
+            i + 1 < len(sentences) and 
+            is_good_breakpoint(sentence, sentences[i + 1] if i + 1 < len(sentences) else "")):
+            chunks.append(current_chunk.strip())
             current_chunk = ""
+            current_sentences = []
     
-    # Add the final chunk if it's not empty and meets minimum size
-    if current_chunk and len(current_chunk) >= config["minChunkSize"]:
-        chunks.append(current_chunk)
-    elif current_chunk and chunks:
-        # Append to the last chunk if it's too small
-        chunks[-1] += " " + current_chunk
-    elif current_chunk:
-        # If it's the only chunk, keep it despite being small
-        chunks.append(current_chunk)
+    # Add final chunk
+    if current_chunk.strip():
+        if len(current_chunk) >= config["minChunkSize"] or not chunks:
+            chunks.append(current_chunk.strip())
+        elif chunks:
+            chunks[-1] += " " + current_chunk.strip()
     
     return chunks
+
+
+def detect_semantic_breakpoints(sentences: List[str]) -> set:
+    """Detect natural breakpoints in text based on semantic cues."""
+    breakpoints = set()
+    
+    for i in range(len(sentences) - 1):
+        current = sentences[i].strip()
+        next_sent = sentences[i + 1].strip()
+        
+        # Paragraph breaks (double newlines preserved in sentences)
+        if '\n\n' in current or current.endswith('\n'):
+            breakpoints.add(i + 1)
+        
+        # Topic transitions (discourse markers)
+        transition_markers = [
+            'however', 'meanwhile', 'furthermore', 'moreover', 'nevertheless',
+            'in contrast', 'on the other hand', 'in addition', 'consequently',
+            'therefore', 'thus', 'as a result', 'in conclusion', 'finally',
+            'first', 'second', 'third', 'next', 'then', 'later', 'afterwards'
+        ]
+        
+        next_lower = next_sent.lower()
+        if any(next_lower.startswith(marker) for marker in transition_markers):
+            breakpoints.add(i + 1)
+        
+        # Dialogue boundaries
+        if (current.endswith('"') or current.endswith("'")) and not next_sent.startswith('"'):
+            breakpoints.add(i + 1)
+        
+        # Time/scene transitions
+        time_markers = ['the next day', 'later that', 'meanwhile', 'suddenly', 'then', 'after']
+        if any(marker in next_lower[:50] for marker in time_markers):
+            breakpoints.add(i + 1)
+        
+        # Character/speaker changes (common in narratives)
+        if (re.match(r'^[A-Z][a-z]+ (said|asked|replied|answered|shouted|whispered)', next_sent) or
+            re.match(r'^"[^"]*"[,.]? [A-Z][a-z]+ (said|asked)', next_sent)):
+            breakpoints.add(i + 1)
+    
+    return breakpoints
+
+
+def get_semantic_overlap(sentences: List[str], overlap_size: int) -> List[str]:
+    """Get semantically meaningful overlap sentences."""
+    if not sentences or overlap_size <= 0:
+        return []
+    
+    # Calculate how many sentences to include in overlap
+    total_chars = sum(len(s) for s in sentences)
+    if total_chars <= overlap_size:
+        return sentences
+    
+    # Work backwards to find sentences that fit in overlap_size
+    overlap_sentences = []
+    char_count = 0
+    
+    for sentence in reversed(sentences):
+        if char_count + len(sentence) <= overlap_size:
+            overlap_sentences.insert(0, sentence)
+            char_count += len(sentence)
+        else:
+            break
+    
+    # Ensure we have at least one sentence if possible
+    if not overlap_sentences and sentences:
+        overlap_sentences = [sentences[-1]]
+    
+    return overlap_sentences
+
+
+def is_good_breakpoint(current_sentence: str, next_sentence: str) -> bool:
+    """Determine if this is a good place to break between chunks."""
+    # Good breakpoints: end of paragraphs, after conclusions, before new topics
+    current = current_sentence.strip().lower()
+    next_sent = next_sentence.strip().lower()
+    
+    # End of paragraph indicators
+    if current.endswith('.') and (not next_sent or next_sent[0].isupper()):
+        return True
+    
+    # Conclusion indicators
+    conclusion_words = ['therefore', 'thus', 'in conclusion', 'finally', 'as a result']
+    if any(word in current for word in conclusion_words):
+        return True
+    
+    # New topic indicators
+    topic_starters = ['first', 'second', 'next', 'another', 'furthermore', 'moreover']
+    if any(next_sent.startswith(word) for word in topic_starters):
+        return True
+    
+    return False
 
 
 def split_text_into_chunks(text: str, config: Dict[str, Any]) -> List[str]:

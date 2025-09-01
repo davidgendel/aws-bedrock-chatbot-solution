@@ -99,7 +99,7 @@ Maintain optimal performance with built-in vector management tools:
 This project includes four example documents to test out the chatbot. These are included for quick and easy testing, however you can use any compatible documents you want to test.
 
 
-The folder **rag-docs** includes the following four historical novels in text format: Grimm's Fairy Tales, Moby Dick, The Count of Monte Cristo, and Frankenstein. These novels are in the public domain in the United States and are great examples to start with.
+The folder **rag-docs** includes the following four historical novels in text format: Grimm's Fairy Tales, The Adventures of Sherlock Holmes, The Count of Monte Cristo, and Frankenstein. These novels are in the public domain in the United States and are great examples to start with.
 
 ```bash
 # Navigate to the project folder

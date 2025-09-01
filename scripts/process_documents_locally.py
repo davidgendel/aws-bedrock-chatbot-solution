@@ -454,7 +454,7 @@ class LocalDocumentProcessor:
             return ""
     
     def _create_chunks(self, text: str, metadata: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Create overlapping chunks from text with adaptive parameters for large documents."""
+        """Create overlapping chunks from text with enhanced semantic metadata."""
         sentences = sent_tokenize(text)
         chunks = []
         
@@ -480,11 +480,20 @@ class LocalDocumentProcessor:
             sentence_buffer.append(sentence)
             
             if current_size + len(sentence) > max_chunk_size and current_chunk:
-                # Create current chunk
+                # Extract enhanced metadata for this chunk
+                enhanced_metadata = self._extract_chunk_metadata(current_chunk, len(chunks), metadata)
+                
+                # Create current chunk with enhanced metadata
                 chunks.append({
                     "content": current_chunk.strip(),
                     "metadata": metadata.copy(),
-                    "chunk_index": len(chunks)
+                    "chunk_index": len(chunks),
+                    "heading": enhanced_metadata["heading"],
+                    "chunk_type": enhanced_metadata["chunk_type"],
+                    "key_entities": enhanced_metadata["key_entities"],
+                    "topics": enhanced_metadata["topics"],
+                    "importance_score": enhanced_metadata["importance_score"],
+                    "context_summary": enhanced_metadata["context_summary"]
                 })
                 
                 # Calculate overlap for next chunk
@@ -527,15 +536,224 @@ class LocalDocumentProcessor:
                     current_chunk = sentence
                 current_size += len(sentence)
         
-        # Add the last chunk
+        # Add the last chunk with enhanced metadata
         if current_chunk.strip():
+            enhanced_metadata = self._extract_chunk_metadata(current_chunk, len(chunks), metadata)
             chunks.append({
                 "content": current_chunk.strip(),
                 "metadata": metadata.copy(),
-                "chunk_index": len(chunks)
+                "chunk_index": len(chunks),
+                "heading": enhanced_metadata["heading"],
+                "chunk_type": enhanced_metadata["chunk_type"],
+                "key_entities": enhanced_metadata["key_entities"],
+                "topics": enhanced_metadata["topics"],
+                "importance_score": enhanced_metadata["importance_score"],
+                "context_summary": enhanced_metadata["context_summary"]
             })
         
+        # Add relationship context between chunks
+        self._add_chunk_relationships(chunks)
+        
         return chunks
+    
+    def _extract_chunk_metadata(self, chunk_text: str, chunk_index: int, doc_metadata: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract semantic metadata from chunk content."""
+        try:
+            # Extract heading (look for title-like patterns)
+            heading = self._extract_heading(chunk_text)
+            
+            # Determine chunk type based on content patterns
+            chunk_type = self._classify_chunk_type(chunk_text)
+            
+            # Extract key entities (names, places, important terms)
+            key_entities = self._extract_key_entities(chunk_text)
+            
+            # Extract topics/themes
+            topics = self._extract_topics(chunk_text)
+            
+            # Calculate importance score
+            importance_score = self._calculate_importance_score(chunk_text, chunk_type, key_entities)
+            
+            # Create context summary
+            context_summary = self._create_context_summary(chunk_text, heading, chunk_type)
+            
+            return {
+                "heading": heading,
+                "chunk_type": chunk_type,
+                "key_entities": key_entities,
+                "topics": topics,
+                "importance_score": importance_score,
+                "context_summary": context_summary
+            }
+        except Exception as e:
+            logger.warning(f"Failed to extract chunk metadata: {e}")
+            return {
+                "heading": "",
+                "chunk_type": "paragraph",
+                "key_entities": [],
+                "topics": [],
+                "importance_score": 1.0,
+                "context_summary": chunk_text[:100] + "..."
+            }
+    
+    def _extract_heading(self, text: str) -> str:
+        """Extract heading or title from chunk text."""
+        lines = text.strip().split('\n')
+        first_line = lines[0].strip()
+        
+        # Check for common heading patterns
+        if (len(first_line) < 100 and 
+            (first_line.isupper() or 
+             first_line.istitle() or
+             any(marker in first_line.lower() for marker in ['chapter', 'section', 'part']))):
+            return first_line
+        
+        # Look for sentences that might be titles
+        sentences = sent_tokenize(text)
+        if sentences:
+            first_sentence = sentences[0].strip()
+            if len(first_sentence) < 80 and first_sentence.endswith('.'):
+                return first_sentence[:-1]  # Remove trailing period
+        
+        return ""
+    
+    def _classify_chunk_type(self, text: str) -> str:
+        """Classify the type of content in the chunk."""
+        text_lower = text.lower()
+        
+        # Dialogue detection
+        if '"' in text and text.count('"') >= 2:
+            return "dialogue"
+        
+        # Narrative patterns
+        if any(pattern in text_lower for pattern in ['once upon', 'long ago', 'in the beginning']):
+            return "narrative_opening"
+        
+        # Action/event description
+        if any(pattern in text_lower for pattern in ['suddenly', 'then', 'meanwhile', 'after']):
+            return "action"
+        
+        # Character description
+        if any(pattern in text_lower for pattern in ['he was', 'she was', 'they were', 'appeared to be']):
+            return "description"
+        
+        # Question or problem
+        if '?' in text or any(pattern in text_lower for pattern in ['how', 'what', 'why', 'problem']):
+            return "question"
+        
+        return "paragraph"
+    
+    def _extract_key_entities(self, text: str) -> List[str]:
+        """Extract key entities like names, places, important terms."""
+        entities = []
+        
+        # Simple pattern-based entity extraction
+        import re
+        
+        # Proper nouns (capitalized words)
+        proper_nouns = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', text)
+        entities.extend(proper_nouns[:5])  # Limit to top 5
+        
+        # Quoted terms (often important)
+        quoted_terms = re.findall(r'"([^"]+)"', text)
+        entities.extend(quoted_terms[:3])
+        
+        # Remove duplicates and common words
+        common_words = {'The', 'This', 'That', 'Then', 'When', 'Where', 'What', 'How', 'Why'}
+        entities = [e for e in set(entities) if e not in common_words and len(e) > 2]
+        
+        return entities[:8]  # Return top 8 entities
+    
+    def _extract_topics(self, text: str) -> List[str]:
+        """Extract main topics/themes from the text."""
+        topics = []
+        text_lower = text.lower()
+        
+        # Topic keywords mapping
+        topic_keywords = {
+            'magic': ['magic', 'spell', 'enchant', 'wizard', 'fairy', 'potion'],
+            'adventure': ['journey', 'quest', 'travel', 'explore', 'adventure'],
+            'romance': ['love', 'heart', 'marry', 'wedding', 'kiss'],
+            'conflict': ['fight', 'battle', 'war', 'enemy', 'defeat'],
+            'mystery': ['secret', 'hidden', 'mystery', 'unknown', 'discover'],
+            'family': ['father', 'mother', 'son', 'daughter', 'family'],
+            'nature': ['forest', 'sea', 'mountain', 'river', 'tree'],
+            'royalty': ['king', 'queen', 'prince', 'princess', 'castle']
+        }
+        
+        for topic, keywords in topic_keywords.items():
+            if any(keyword in text_lower for keyword in keywords):
+                topics.append(topic)
+        
+        return topics[:4]  # Return top 4 topics
+    
+    def _calculate_importance_score(self, text: str, chunk_type: str, entities: List[str]) -> float:
+        """Calculate importance score for ranking."""
+        score = 1.0
+        
+        # Boost based on chunk type
+        type_weights = {
+            'dialogue': 1.3,
+            'narrative_opening': 1.4,
+            'question': 1.2,
+            'action': 1.1,
+            'description': 0.9,
+            'paragraph': 1.0
+        }
+        score *= type_weights.get(chunk_type, 1.0)
+        
+        # Boost based on entities
+        score += len(entities) * 0.1
+        
+        # Boost for questions and exclamations
+        score += text.count('?') * 0.1
+        score += text.count('!') * 0.05
+        
+        # Boost for dialogue
+        score += text.count('"') * 0.05
+        
+        return min(score, 2.0)  # Cap at 2.0
+    
+    def _create_context_summary(self, text: str, heading: str, chunk_type: str) -> str:
+        """Create a brief context summary for the chunk."""
+        if heading:
+            return f"{chunk_type.title()}: {heading}"
+        
+        # Create summary from first sentence
+        sentences = sent_tokenize(text)
+        if sentences:
+            first_sentence = sentences[0][:100]
+            return f"{chunk_type.title()}: {first_sentence}..."
+        
+        return f"{chunk_type.title()}: {text[:80]}..."
+    
+    def _add_chunk_relationships(self, chunks: List[Dict[str, Any]]) -> None:
+        """Add relationship context between chunks."""
+        for i, chunk in enumerate(chunks):
+            # Add previous chunk context
+            if i > 0:
+                prev_chunk = chunks[i-1]
+                chunk["prev_context"] = {
+                    "heading": prev_chunk.get("heading", ""),
+                    "chunk_type": prev_chunk.get("chunk_type", ""),
+                    "summary": prev_chunk.get("context_summary", "")[:50]
+                }
+            
+            # Add next chunk context (will be filled for previous chunks)
+            if i < len(chunks) - 1:
+                next_chunk = chunks[i+1]
+                chunk["next_context"] = {
+                    "heading": next_chunk.get("heading", ""),
+                    "chunk_type": next_chunk.get("chunk_type", ""),
+                    "summary": next_chunk.get("context_summary", "")[:50]
+                }
+            
+            # Add position context
+            chunk["position_context"] = {
+                "chunk_position": i + 1,
+                "total_chunks": len(chunks),
+                "relative_position": (i + 1) / len(chunks)  # 0.0 to 1.0
+            }
     
     def _process_cpu_tasks_parallel(self, file_paths: List[str]) -> List[Dict[str, Any]]:
         """

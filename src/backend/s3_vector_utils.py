@@ -307,7 +307,10 @@ def store_document_vectors(document_id: str, chunks_with_embeddings: List[Dict[s
                         'content': chunk["content"][:500],
                         'heading': chunk.get("heading", "")[:100],
                         'chunk_type': chunk.get("chunk_type", "paragraph"),
+                        'key_entities': json.dumps(chunk.get("key_entities", []))[:200],
+                        'topics': json.dumps(chunk.get("topics", []))[:100],
                         'importance_score': str(chunk.get("importance_score", 1.0)),
+                        'context_summary': chunk.get("context_summary", "")[:200],
                         'created_at': datetime.utcnow().isoformat()
                     }
                 }
@@ -426,11 +429,32 @@ def query_similar_vectors(
                 metadata = vector.get('metadata', {})
                 distance = vector.get('distance', 1.0)
                 
-                # Convert distance to similarity (assuming cosine distance)
+                # Convert distance to similarity and apply enhanced scoring
                 similarity = 1.0 - distance if distance <= 1.0 else 0.0
                 
                 if similarity < similarity_threshold:
                     continue
+                
+                # Enhanced scoring with metadata
+                enhanced_score = similarity
+                
+                # Boost based on importance score
+                importance = float(metadata.get('importance_score', 1.0))
+                enhanced_score *= importance
+                
+                # Boost for relevant chunk types
+                chunk_type = metadata.get('chunk_type', 'paragraph')
+                if chunk_type in ['dialogue', 'question', 'narrative_opening']:
+                    enhanced_score *= 1.1
+                
+                # Boost for entities and topics (if they match query context)
+                try:
+                    entities = json.loads(metadata.get('key_entities', '[]'))
+                    topics = json.loads(metadata.get('topics', '[]'))
+                    if entities or topics:
+                        enhanced_score *= 1.05
+                except:
+                    pass
                 
                 result = {
                     "id": vector.get('key', ''),
@@ -439,9 +463,16 @@ def query_similar_vectors(
                     "content": metadata.get('content', ''),
                     "heading": metadata.get('heading', ''),
                     "chunk_type": metadata.get('chunk_type', 'paragraph'),
+                    "key_entities": metadata.get('key_entities', '[]'),
+                    "topics": metadata.get('topics', '[]'),
                     "importance_score": float(metadata.get('importance_score', 1.0)),
+                    "context_summary": metadata.get('context_summary', ''),
+                    "prev_context": metadata.get('prev_context', '{}'),
+                    "next_context": metadata.get('next_context', '{}'),
+                    "position_context": metadata.get('position_context', '{}'),
                     "metadata": metadata,
-                    "similarity": similarity
+                    "similarity": similarity,
+                    "enhanced_score": enhanced_score
                 }
                 results.append(result)
                 
@@ -449,8 +480,8 @@ def query_similar_vectors(
                 logger.debug(f"Error processing match: {match_error}")
                 continue
         
-        # Sort by combined score
-        results.sort(key=lambda x: x["similarity"] * x["importance_score"], reverse=True)
+        # Sort by enhanced score (combines similarity + metadata)
+        results.sort(key=lambda x: x["enhanced_score"], reverse=True)
         
         logger.info(f"S3 Vectors query returned {len(results)} results")
         return results[:limit]

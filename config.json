@@ -28,6 +28,43 @@
     "dimensions": 1024,
     "similarityMetric": "COSINE"
   },
+  "retrieval": {
+    "multiStage": {
+      "enabled": true,
+      "fallbackToSingleStage": true
+    },
+    "thresholds": {
+      "simple": {
+        "stage1": 0.4,
+        "final": 0.6
+      },
+      "medium": {
+        "stage1": 0.4,
+        "final": 0.6
+      },
+      "complex": {
+        "stage1": 0.25,
+        "final": 0.4
+      }
+    },
+    "limits": {
+      "expansionMultiplier": {
+        "simple": 2,
+        "medium": 3,
+        "complex": 4
+      }
+    }
+  },
+  "hybrid_search": {
+    "enabled": true,
+    "semantic_weight": 0.7,
+    "keyword_weight": 0.3,
+    "bm25_params": {
+      "k1": 2.0,
+      "b": 0.50
+    },
+    "fallback_to_semantic": true
+  },
   "bedrock": {
     "modelId": "amazon.nova-lite-v1:0",
     "guardrails": {

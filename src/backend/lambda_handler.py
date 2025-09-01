@@ -31,6 +31,7 @@ try:
     )
     from .model_config import ModelConfig
     from .s3_vector_utils import query_similar_vectors, cleanup_old_vectors
+    from .multi_stage_retrieval import enhanced_query_similar_vectors
     from .validation import validate_input, validate_websocket_input
 except ImportError:
     # Fall back to absolute imports (for Lambda environment)
@@ -51,6 +52,7 @@ except ImportError:
     )
     from model_config import ModelConfig
     from s3_vector_utils import query_similar_vectors, cleanup_old_vectors
+    from multi_stage_retrieval import enhanced_query_similar_vectors
     from validation import validate_input, validate_websocket_input
 
 # Initialize logger
@@ -214,63 +216,63 @@ def handle_chat_request(body: Dict[str, Any]) -> Dict[str, Any]:
             logger.info("Using cached document context")
             relevant_docs = cached_docs
         else:
-            # Retrieve relevant documents using S3 Vectors
-            relevant_docs = query_similar_vectors(embedding, limit=3, similarity_threshold=0.45)
+            # Use multi-stage retrieval with query text analysis
+            relevant_docs = enhanced_query_similar_vectors(
+                query_embedding=embedding,
+                query_text=message,
+                limit=3,
+                use_multi_stage=True
+            )
             # Cache the retrieved context
             cache_context(embedding, limit=3, threshold=0.45, context=relevant_docs)
             logger.info("Cached document context")
         
-        # Construct prompt with retrieved documents
+        # Construct prompt with retrieved documents and enhanced metadata
         context = ""
         if relevant_docs:
             context = "Here is some relevant information that might help answer the question:\n\n"
             
             for i, doc in enumerate(relevant_docs):
-                # Check if we have enhanced metadata
-                if doc.get("document_title") and doc.get("heading"):
-                    context += f'Document {i + 1}: "{doc["document_title"]}"\n'
-                    if doc["heading"]:
-                        context += f'Section: {doc["heading"]}\n'
-                    context += f'Content: {doc["content"]}\n\n'
-                    
-                    # Add relevant metadata if available
-                    if doc.get("metadata"):
-                        try:
-                            metadata = (
-                                json.loads(doc["metadata"])
-                                if isinstance(doc["metadata"], str)
-                                else doc["metadata"]
-                            )
-                            
-                            # Add source information if available
-                            if metadata.get("source"):
-                                context += f'Source: {metadata["source"]}\n'
-                            
-                            # Add author information if available
-                            if metadata.get("author"):
-                                context += f'Author: {metadata["author"]}\n'
-                            
-                            # Add date information if available
-                            if metadata.get("date"):
-                                context += f'Date: {metadata["date"]}\n'
-                            
-                            # Add table information if this chunk references a table
-                            if "[TABLE" in doc["content"] and metadata.get("tables") and metadata["tables"]:
-                                import re
-                                table_match = re.search(r"\[TABLE (\d+)\]", doc["content"])
-                                if table_match:
-                                    table_index = int(table_match.group(1)) - 1
-                                    if 0 <= table_index < len(metadata["tables"]):
-                                        context += "Table content:\n"
-                                        table = metadata["tables"][table_index]
-                                        for row in table["rows"]:
-                                            context += " | ".join(row) + "\n"
-                                        context += "\n"
-                        except Exception as e:
-                            logger.error(f"Error parsing document metadata: {e}")
+                # Enhanced context with metadata
+                context += f'Document {i + 1}: "{doc.get("document_id", "Unknown")}"'
+                
+                # Add heading if available
+                if doc.get("heading"):
+                    context += f' - {doc["heading"]}'
+                
+                # Add chunk type and context summary
+                chunk_type = doc.get("chunk_type", "paragraph")
+                context_summary = doc.get("context_summary", "")
+                if context_summary:
+                    context += f'\nType: {chunk_type.title()} - {context_summary}'
                 else:
-                    # Fallback for old schema
-                    context += f'Document {i + 1}:\n{doc["content"]}\n\n'
+                    context += f'\nType: {chunk_type.title()}'
+                
+                # Add key entities if available
+                try:
+                    entities_str = doc.get("key_entities", "[]")
+                    if isinstance(entities_str, str):
+                        entities = json.loads(entities_str)
+                    else:
+                        entities = entities_str
+                    if entities:
+                        context += f'\nKey entities: {", ".join(entities[:3])}'
+                except:
+                    pass
+                
+                # Add topics if available
+                try:
+                    topics_str = doc.get("topics", "[]")
+                    if isinstance(topics_str, str):
+                        topics = json.loads(topics_str)
+                    else:
+                        topics = topics_str
+                    if topics:
+                        context += f'\nTopics: {", ".join(topics)}'
+                except:
+                    pass
+                
+                context += f'\nContent: {doc["content"]}\n\n'
         
         prompt = f"""{context}
 User question: {message}
@@ -372,6 +374,7 @@ def send_to_connection(api_client, connection_id: str, data: Dict[str, Any], rai
             return False
         except Exception as e:
             # Continue anyway - some APIs don't support get_connection
+            pass
         
         api_client.post_to_connection(
             ConnectionId=connection_id,
@@ -737,7 +740,13 @@ def _process_websocket_message_and_stream(message: str, connection_id: str, api_
             logger.info("Using cached document context")
             relevant_docs = cached_docs
         else:
-            relevant_docs = query_similar_vectors(embeddings, limit=5, similarity_threshold=0.45)
+            # Use multi-stage retrieval with query text analysis
+            relevant_docs = enhanced_query_similar_vectors(
+                query_embedding=embeddings,
+                query_text=message,
+                limit=5,
+                use_multi_stage=True
+            )
             # Cache the retrieved context
             cache_context(embeddings, limit=5, threshold=0.45, context=relevant_docs)
             logger.info("Cached document context")
