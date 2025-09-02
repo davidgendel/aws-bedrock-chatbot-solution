@@ -33,7 +33,6 @@ NC = "\033[0m"  # No Color
 # Script variables
 CONFIG_FILE = "config.json"
 STACK_NAME = "ChatbotRagStack"
-DOCS_FOLDER = "documents"
 
 
 def section(title: str):
@@ -312,21 +311,7 @@ def upload_frontend_assets(website_bucket: str, region: str):
     success("Frontend assets uploaded")
 
 
-def process_knowledge_base(region: str):
-    """Process knowledge base."""
-    section("Processing Knowledge Base")
-    
-    # Check if documents folder exists and has files
-    docs_folder = Path(DOCS_FOLDER)
-    if docs_folder.exists() and any(docs_folder.iterdir()):
-        print("Uploading documents to knowledge base...")
-        try:
-            run_command(f"python3 -m scripts.upload_documents --folder {DOCS_FOLDER}")
-            success("Documents processed")
-        except subprocess.CalledProcessError:
-            warning("Document upload script encountered issues")
-    else:
-        warning("No documents folder found or folder is empty. Create a 'documents' folder and add your knowledge base files.")
+
 
 
 
@@ -359,7 +344,7 @@ def display_summary(outputs: Dict[str, str]):
     print(f"\n{YELLOW}Note: It may take a few minutes for the CloudFront distribution to fully deploy.{NC}")
     
     section("Next Steps")
-    print(f"1. Add more documents to the '{DOCS_FOLDER}' folder and run 'python3 -m scripts.upload_documents --folder ./{DOCS_FOLDER}'")
+    print("1. Use './process_documents --folder ./rag-docs' to add documents to your knowledge base")
     print("2. Customize the widget appearance using the theme options")
     print("3. Monitor usage in the AWS CloudWatch console")
     
@@ -392,11 +377,6 @@ def main():
         
         # Upload frontend assets
         upload_frontend_assets(outputs["website_bucket"], region)
-        
-        # Process knowledge base
-        process_knowledge_base(region)
-        
-
         
         # Display summary
         display_summary(outputs)
