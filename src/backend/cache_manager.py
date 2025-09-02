@@ -31,7 +31,7 @@ class CacheManager:
     """Unified cache manager with multiple cache layers."""
     
     def __init__(self):
-        """Initialize the cache manager with optimized cache configurations."""
+        """Initialize the cache manager with cache configurations."""
         # Response cache - for chat responses (most frequently accessed)
         self.response_cache = TTLCache(maxsize=500, ttl=7200)  # 2 hours TTL
         self.response_lock = threading.RLock()

@@ -7,7 +7,7 @@ import logging
 import os
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import boto3
@@ -170,7 +170,7 @@ def process_document(bucket: str, key: str) -> Dict[str, Any]:
             "file_size": extracted_content.get("file_size", 0),
             "content_length": len(extracted_content["content"]),
             "metadata": extracted_content.get("metadata", {}),
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
             "processing_status": "processing"
         }
         

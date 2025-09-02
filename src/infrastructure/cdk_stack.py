@@ -501,7 +501,7 @@ def handler(event, context):
             )
         )
 
-        # Add permissions for regular S3 buckets (documents) - metadata bucket will be added later
+        # Add permissions for regular S3 buckets (documents) - metadata bucket will be configured later
         lambda_role.add_to_policy(
             iam.PolicyStatement(
                 actions=[

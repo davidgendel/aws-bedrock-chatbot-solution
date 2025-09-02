@@ -4,13 +4,13 @@ Enhanced deployment state management for robust deployment tracking.
 import json
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 
 
 class DeploymentStateManager:
-    """Manages deployment state with enhanced tracking and recovery."""
+    """Manages deployment state with tracking and recovery."""
     
     def __init__(self, state_file: str = ".deployment_state"):
         self.state_file = Path(state_file)
@@ -22,7 +22,7 @@ class DeploymentStateManager:
         default_state = {
             "version": "2.0",
             "deployment_id": self._generate_deployment_id(),
-            "started_at": datetime.utcnow().isoformat(),
+            "started_at": datetime.now(timezone.utc).isoformat(),
             "current_step": None,
             "completed_steps": [],
             "failed_steps": [],
@@ -102,7 +102,7 @@ class DeploymentStateManager:
         """Start a new deployment step."""
         self.state["current_step"] = step_name
         self.state["step_details"][step_name] = {
-            "started_at": datetime.utcnow().isoformat(),
+            "started_at": datetime.now(timezone.utc).isoformat(),
             "description": description,
             "status": "in_progress",
             "substeps": [],
@@ -117,7 +117,7 @@ class DeploymentStateManager:
         
         if step_name in self.state["step_details"]:
             self.state["step_details"][step_name].update({
-                "completed_at": datetime.utcnow().isoformat(),
+                "completed_at": datetime.now(timezone.utc).isoformat(),
                 "status": "completed",
                 "result": result or {}
             })
@@ -135,13 +135,13 @@ class DeploymentStateManager:
         
         if step_name in self.state["step_details"]:
             self.state["step_details"][step_name].update({
-                "failed_at": datetime.utcnow().isoformat(),
+                "failed_at": datetime.now(timezone.utc).isoformat(),
                 "status": "failed",
                 "error": error,
                 "error_details": details or {}
             })
             self.state["step_details"][step_name]["errors"].append({
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "error": error,
                 "details": details
             })
@@ -154,7 +154,7 @@ class DeploymentStateManager:
             self.state["step_details"][step_name]["substeps"].append({
                 "name": substep,
                 "status": status,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             })
             self._save_state()
     
@@ -163,7 +163,7 @@ class DeploymentStateManager:
         recovery_point = {
             "name": name,
             "description": description,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "completed_steps": self.state["completed_steps"].copy(),
             "current_step": self.state["current_step"]
         }
@@ -177,7 +177,7 @@ class DeploymentStateManager:
             "type": resource_type,
             "id": resource_id,
             "status": status,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
         
         if status == "created":

@@ -35,7 +35,7 @@ class TestCostMonitor(unittest.TestCase):
         # Mock CloudWatch client
         self.mock_cloudwatch = Mock()
         
-        with patch('cost_monitor.get_cloudwatch_client', return_value=self.mock_cloudwatch):
+        with patch('boto3.client', return_value=self.mock_cloudwatch):
             self.cost_monitor = CostMonitor(self.config)
     
     def test_cost_monitor_initialization(self):
@@ -150,7 +150,7 @@ class TestCostMonitor(unittest.TestCase):
         self.assertEqual(summary['total_tokens'], 150)
         self.assertEqual(summary['total_vector_queries'], 1)
     
-    @patch('cost_monitor.get_cloudwatch_client')
+    @patch('boto3.client')
     def test_metrics_flushing(self, mock_get_client):
         """Test metrics flushing to CloudWatch."""
         mock_client = Mock()
@@ -179,7 +179,7 @@ class TestCostMonitor(unittest.TestCase):
         """Test cost monitor when disabled."""
         disabled_config = {'enabled': False}
         
-        with patch('cost_monitor.get_cloudwatch_client'):
+        with patch('boto3.client'):
             disabled_monitor = CostMonitor(disabled_config)
         
         # All tracking should return default values
@@ -330,7 +330,7 @@ class TestConvenienceFunctions(unittest.TestCase):
 class TestIntegration(unittest.TestCase):
     """Integration tests for cost monitoring."""
     
-    @patch('cost_monitor.get_cloudwatch_client')
+    @patch('boto3.client')
     def test_end_to_end_cost_tracking(self, mock_get_client):
         """Test end-to-end cost tracking scenario."""
         mock_client = Mock()

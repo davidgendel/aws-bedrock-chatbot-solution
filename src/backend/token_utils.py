@@ -90,13 +90,13 @@ def optimize_prompt(prompt: str, max_tokens: int = 4000) -> str:
             
             # Sort documents by relevance (assuming they're already sorted)
             # Keep adding documents until we hit the token limit
-            optimized_context = []
+            filtered_context = []
             current_tokens = 0
             
             for doc in documents:
                 doc_tokens = estimate_tokens(doc)
                 if current_tokens + doc_tokens <= available_context_tokens:
-                    optimized_context.append(doc)
+                    filtered_context.append(doc)
                     current_tokens += doc_tokens
                 else:
                     break
@@ -106,9 +106,9 @@ def optimize_prompt(prompt: str, max_tokens: int = 4000) -> str:
             if context_start > 0:
                 result.extend(sections[:context_start])
             
-            if optimized_context:
+            if filtered_context:
                 result.append('Here is some relevant information that might help answer the question:')
-                result.extend(optimized_context)
+                result.extend(filtered_context)
             
             if context_end > 0:
                 result.extend(sections[context_end:])

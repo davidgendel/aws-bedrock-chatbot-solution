@@ -6,7 +6,7 @@ import logging
 import os
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 import hashlib
 import threading
@@ -311,7 +311,7 @@ def store_document_vectors(document_id: str, chunks_with_embeddings: List[Dict[s
                         'topics': json.dumps(chunk.get("topics", []))[:100],
                         'importance_score': str(chunk.get("importance_score", 1.0)),
                         'context_summary': chunk.get("context_summary", "")[:200],
-                        'created_at': datetime.utcnow().isoformat()
+                        'created_at': datetime.now(timezone.utc).isoformat()
                     }
                 }
                 vectors_to_insert.append(vector_entry)
@@ -429,30 +429,30 @@ def query_similar_vectors(
                 metadata = vector.get('metadata', {})
                 distance = vector.get('distance', 1.0)
                 
-                # Convert distance to similarity and apply enhanced scoring
+                # Convert distance to similarity and apply scoring
                 similarity = 1.0 - distance if distance <= 1.0 else 0.0
                 
                 if similarity < similarity_threshold:
                     continue
                 
-                # Enhanced scoring with metadata
-                enhanced_score = similarity
+                # Scoring with metadata
+                score = similarity
                 
                 # Boost based on importance score
                 importance = float(metadata.get('importance_score', 1.0))
-                enhanced_score *= importance
+                score *= importance
                 
                 # Boost for relevant chunk types
                 chunk_type = metadata.get('chunk_type', 'paragraph')
                 if chunk_type in ['dialogue', 'question', 'narrative_opening']:
-                    enhanced_score *= 1.1
+                    score *= 1.1
                 
                 # Boost for entities and topics (if they match query context)
                 try:
                     entities = json.loads(metadata.get('key_entities', '[]'))
                     topics = json.loads(metadata.get('topics', '[]'))
                     if entities or topics:
-                        enhanced_score *= 1.05
+                        score *= 1.05
                 except:
                     pass
                 
@@ -472,7 +472,7 @@ def query_similar_vectors(
                     "position_context": metadata.get('position_context', '{}'),
                     "metadata": metadata,
                     "similarity": similarity,
-                    "enhanced_score": enhanced_score
+                    "score": score
                 }
                 results.append(result)
                 
@@ -480,8 +480,8 @@ def query_similar_vectors(
                 logger.debug(f"Error processing match: {match_error}")
                 continue
         
-        # Sort by enhanced score (combines similarity + metadata)
-        results.sort(key=lambda x: x["enhanced_score"], reverse=True)
+        # Sort by score (combines similarity + metadata)
+        results.sort(key=lambda x: x["score"], reverse=True)
         
         logger.info(f"S3 Vectors query returned {len(results)} results")
         return results[:limit]
@@ -541,7 +541,7 @@ def _hierarchical_vector_search(
         except Exception as e:
             logger.warning(f"Could not load partition structure: {e}")
             # Fall back to batch search
-            return _query_vectors_optimized_batch(
+            return _query_vectors_batch(
                 query_embedding, limit, similarity_threshold, filters,
                 vector_bucket, index_name
             )
@@ -664,13 +664,13 @@ def _hierarchical_vector_search(
     except Exception as e:
         logger.error(f"Hierarchical search failed: {e}")
         # Fall back to batch search
-        return _query_vectors_optimized_batch(
+        return _query_vectors_batch(
             query_embedding, limit, similarity_threshold, filters,
             vector_bucket, index_name
         )
 
 
-def _query_vectors_optimized_batch(
+def _query_vectors_batch(
     query_embedding: List[float],
     limit: int,
     similarity_threshold: float,
@@ -795,7 +795,7 @@ def _query_vectors_optimized_batch(
             # Sort by combined score
             results.sort(key=lambda x: x["similarity"] * x["importance_score"], reverse=True)
             
-            logger.info(f"Batch optimized query returned {len(results)} results")
+            logger.info(f"Batch query returned {len(results)} results")
             return results[:limit]
             
         except Exception as s3_error:
@@ -807,7 +807,7 @@ def _query_vectors_optimized_batch(
         return []
 
 
-def _query_vectors_optimized(
+def _query_vectors_single(
     query_embedding: List[float],
     limit: int,
     similarity_threshold: float,
@@ -1706,12 +1706,12 @@ def optimize_vector_index(index_name: str) -> Dict[str, Any]:
             "vector_count": vector_count,
             "index_size_mb": round(vector_count * 0.006, 2),  # Estimate: ~6KB per vector
             "cache_cleared": cache_cleared,
-            "message": f"Index optimized with {vector_count} vectors"
+            "message": f"Index processed with {vector_count} vectors"
         }
         
     except Exception as e:
-        logger.error(f"Failed to optimize vector index: {e}")
-        return {"success": False, "error": "Vector index optimization failed"}
+        logger.error(f"Failed to process vector index: {e}")
+        return {"success": False, "error": "Vector index processing failed"}
 
 
 def get_vector_index_stats() -> Dict[str, Any]:
@@ -1768,7 +1768,7 @@ def get_vector_index_stats() -> Dict[str, Any]:
                 "average_vectors_per_index": vector_count,
                 "indexes": indexes,
                 "cache_stats": get_cache_stats(),
-                "generated_at": datetime.utcnow().isoformat()
+                "generated_at": datetime.now(timezone.utc).isoformat()
             }
             
             return stats
@@ -1889,9 +1889,7 @@ def cleanup_old_vectors(days_old: int = 90) -> Dict[str, Any]:
         Cleanup results
     """
     try:
-        from datetime import timedelta
-        
-        cutoff_date = datetime.utcnow() - timedelta(days=days_old)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_old)
         vector_bucket = os.environ.get("VECTOR_BUCKET_NAME")
         index_name = os.environ.get("VECTOR_INDEX_NAME")
         
@@ -1911,7 +1909,7 @@ def cleanup_old_vectors(days_old: int = 90) -> Dict[str, Any]:
         objects_to_delete = []
         for page in pages:
             for obj in page.get('Contents', []):
-                if obj['LastModified'].replace(tzinfo=None) < cutoff_date:
+                if obj['LastModified'].replace(tzinfo=None) < cutoff_date.replace(tzinfo=None):
                     objects_to_delete.append({'Key': obj['Key']})
                     
                     # Delete in batches of 1000

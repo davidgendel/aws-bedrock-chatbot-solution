@@ -316,9 +316,10 @@ class MetricsCollector:
         """Send a batch of metrics to CloudWatch."""
         try:
             # Import here to avoid circular imports
-            from .aws_utils import get_cloudwatch_client
+            import boto3
+            from .aws_utils import get_aws_region, get_boto3_config
             
-            cloudwatch_client = get_cloudwatch_client()
+            cloudwatch_client = boto3.client('cloudwatch', region_name=get_aws_region(), config=get_boto3_config())
             
             cloudwatch_client.put_metric_data(
                 Namespace=batch.namespace,

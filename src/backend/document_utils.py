@@ -7,12 +7,12 @@ import os
 import re
 from typing import Any, Dict, List, Optional
 
+import boto3
 try:
-    from .aws_utils import get_s3_client, get_textract_client
+    from .aws_utils import get_aws_region, get_boto3_config
 except ImportError:
-    from aws_utils import get_s3_client, get_textract_client
+    from aws_utils import get_aws_region, get_boto3_config
 
-# Initialize logger
 logger = logging.getLogger(__name__)
 
 
@@ -209,8 +209,8 @@ def extract_text_from_document(bucket: str, key: str) -> Dict[str, Any]:
     """
     try:
         # Initialize AWS clients
-        s3_client = get_s3_client()
-        textract_client = get_textract_client()
+        s3_client = boto3.client('s3', region_name=get_aws_region(), config=get_boto3_config())
+        textract_client = boto3.client('textract', region_name=get_aws_region(), config=get_boto3_config())
         
         # Determine file type from key
         file_extension = key.split(".")[-1].lower()
@@ -285,7 +285,7 @@ def extract_text_from_document(bucket: str, key: str) -> Dict[str, Any]:
         elif file_extension in ["pdf", "png", "jpg", "jpeg", "tiff"]:
             document_metadata["extractionMethod"] = "textract"
             
-            # For documents and images, use Textract with enhanced features
+            # For documents and images, use Textract with features
             response = textract_client.analyze_document(
                 Document={
                     "S3Object": {

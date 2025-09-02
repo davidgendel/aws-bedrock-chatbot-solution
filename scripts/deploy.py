@@ -186,12 +186,12 @@ def configure_application(region: str):
     print("Getting deployment outputs...")
     
     # Get stack outputs
-    # Use signed client for enhanced security
+    # Use signed client for security
     try:
         import sys
         from pathlib import Path
         sys.path.append(str(Path(__file__).parent.parent / "lambda_function"))
-        from aws_client_factory import AWSClientFactory
+        # AWS clients already use direct boto3.client calls
         cf_client = AWSClientFactory.create_client("cloudformation", region_name=region, enable_signing=True)
     except ImportError:
         cf_client = boto3.client("cloudformation", region_name=region)

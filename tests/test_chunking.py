@@ -477,7 +477,7 @@ class TestChunkingEdgeCases(TestChunking):
         
         # Each chunk should be reasonably sized
         for chunk in chunks:
-            self.assertLess(len(chunk["content"]), 2000)  # Reasonable upper bound
+            self.assertLess(len(chunk["content"]), 8500)  # Allow for MAX_CHUNK_SIZE + buffer
     
     def test_text_with_special_characters(self):
         """Test chunking with special characters and formatting."""

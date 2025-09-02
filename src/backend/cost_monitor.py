@@ -10,11 +10,12 @@ from typing import Any, Dict, List, Optional, Union
 from dataclasses import dataclass, asdict
 from enum import Enum
 
+import boto3
 try:
-    from .aws_utils import get_cloudwatch_client
+    from .aws_utils import get_aws_region, get_boto3_config
     from .error_handler import handle_error
 except ImportError:
-    from aws_utils import get_cloudwatch_client
+    from aws_utils import get_aws_region, get_boto3_config
     from error_handler import handle_error
 
 logger = logging.getLogger(__name__)
@@ -124,7 +125,7 @@ class CostMonitor:
         
         # Initialize CloudWatch client
         try:
-            self.cloudwatch_client = get_cloudwatch_client()
+            self.cloudwatch_client = boto3.client('cloudwatch', region_name=get_aws_region(), config=get_boto3_config())
             logger.info("Cost monitor initialized successfully")
         except Exception as e:
             logger.warning(f"Failed to initialize CloudWatch client: {e}")

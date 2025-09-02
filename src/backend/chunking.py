@@ -17,7 +17,6 @@ except ImportError:
         DEFAULT_CHUNK_SIZE, MAX_CHUNK_SIZE, MIN_CHUNK_SIZE, CHUNK_OVERLAP_SIZE
     )
 
-# Initialize logger
 logger = logging.getLogger(__name__)
 
 # Download NLTK data if not already downloaded - support both old and new versions
@@ -191,7 +190,9 @@ def calculate_section_importance(heading: Dict[str, Any], text: str) -> float:
         score += (7 - min(heading["level"], 6)) * 0.15
     
     # Analyze heading text for importance indicators
-    heading_text = heading.get("text", "").lower()
+    heading_text = ""
+    if heading and heading.get("text"):
+        heading_text = heading["text"].lower()
     important_keywords = ["introduction", "conclusion", "summary", "overview", "key", "important", "main"]
     if any(keyword in heading_text for keyword in important_keywords):
         score += 0.3

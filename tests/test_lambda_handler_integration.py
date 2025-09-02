@@ -242,8 +242,8 @@ class TestLambdaHandlerIntegration:
     @patch('src.backend.lambda_handler.generate_embeddings')
     @patch('src.backend.lambda_handler.generate_cached_response')
     @patch('src.backend.lambda_handler.cached_apply_guardrails')
-    @patch('src.backend.lambda_handler.get_aws_client')
-    def test_websocket_handler_success(self, mock_get_aws_client, mock_cached_guardrails, mock_cached_response, mock_generate_embeddings, mock_generate_response, mock_query_vectors, mock_guardrails):
+    @patch('boto3.client')
+    def test_websocket_handler_success(self, mock_boto3_client, mock_cached_guardrails, mock_cached_response, mock_generate_embeddings, mock_generate_response, mock_query_vectors, mock_guardrails):
         """Test successful WebSocket handler execution."""
         # Setup mocks
         mock_guardrails.return_value = {"blocked": False, "reasons": []}
@@ -263,7 +263,7 @@ class TestLambdaHandlerIntegration:
         
         # Mock AWS client for WebSocket API
         mock_api_client = Mock()
-        mock_get_aws_client.return_value = mock_api_client
+        mock_boto3_client.return_value = mock_api_client
         
         # Create test event
         event = {
@@ -287,12 +287,12 @@ class TestLambdaHandlerIntegration:
         # Assertions
         assert response["statusCode"] == 200
     
-    @patch('src.backend.lambda_handler.get_aws_client')
-    def test_websocket_handler_invalid_action(self, mock_get_aws_client):
+    @patch('boto3.client')
+    def test_websocket_handler_invalid_action(self, mock_boto3_client):
         """Test WebSocket handler with invalid action."""
         # Mock AWS client
         mock_api_client = Mock()
-        mock_get_aws_client.return_value = mock_api_client
+        mock_boto3_client.return_value = mock_api_client
         
         event = {
             "requestContext": {
@@ -315,12 +315,12 @@ class TestLambdaHandlerIntegration:
         # Should handle gracefully
         assert response["statusCode"] in [200, 400]
     
-    @patch('src.backend.lambda_handler.get_aws_client')
-    def test_websocket_handler_heartbeat(self, mock_get_aws_client):
+    @patch('boto3.client')
+    def test_websocket_handler_heartbeat(self, mock_boto3_client):
         """Test WebSocket handler heartbeat."""
         # Mock AWS client
         mock_api_client = Mock()
-        mock_get_aws_client.return_value = mock_api_client
+        mock_boto3_client.return_value = mock_api_client
         
         event = {
             "requestContext": {
@@ -372,7 +372,7 @@ class TestLambdaHandlerIntegration:
         assert get_cached_response("test_message") is None
     
     @patch('src.backend.lambda_handler.apply_guardrails')
-    @patch('src.backend.lambda_handler.query_similar_vectors')
+    @patch('src.backend.lambda_handler.enhanced_query_similar_vectors')
     @patch('src.backend.lambda_handler.generate_response')
     def test_lambda_handler_error_handling(self, mock_generate_response, mock_query_vectors, mock_guardrails):
         """Test Lambda handler error handling."""

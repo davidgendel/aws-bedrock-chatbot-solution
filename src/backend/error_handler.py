@@ -4,7 +4,7 @@ Centralized error handling utilities for consistent error management.
 import json
 import logging
 import traceback
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Union
 from enum import Enum
 
@@ -40,7 +40,7 @@ class ChatbotError(Exception):
         self.error_type = error_type
         self.original_error = original_error
         self.context = context or {}
-        self.timestamp = datetime.utcnow().isoformat()
+        self.timestamp = datetime.now(timezone.utc).isoformat()
         super().__init__(self.message)
 
 
@@ -267,7 +267,7 @@ def create_success_response(data: Any, status_code: int = 200) -> Dict[str, Any]
     success_response = {
         "success": True,
         "data": data,
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }
     
     return {

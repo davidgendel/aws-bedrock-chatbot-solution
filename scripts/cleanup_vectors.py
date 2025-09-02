@@ -7,7 +7,7 @@ import json
 import logging
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict
 
@@ -60,12 +60,12 @@ def setup_environment(region: str):
             config = json.load(f)
         
         # Get AWS account ID for bucket naming
-        # Use signed client for enhanced security
+        # Use signed client for security
         try:
             import sys
             from pathlib import Path
             sys.path.append(str(Path(__file__).parent.parent / "lambda_function"))
-            from aws_client_factory import AWSClientFactory
+            # Use direct boto3 client
             sts_client = AWSClientFactory.create_client("sts", region_name=region, enable_signing=True)
         except ImportError:
             # Fallback to regular boto3 client
@@ -146,7 +146,7 @@ def cleanup_metadata(days_old: int, dry_run: bool = False) -> Dict[str, Any]:
             s3_client = boto3.client("s3", region_name=os.environ.get("AWS_REGION", "us-east-1"))
         
         # Calculate cutoff date
-        cutoff_date = datetime.utcnow() - timedelta(days=days_old)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_old)
         
         # List metadata objects
         response = s3_client.list_objects_v2(

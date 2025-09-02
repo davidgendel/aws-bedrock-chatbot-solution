@@ -5,7 +5,7 @@ import json
 import os
 import unittest
 from unittest.mock import Mock, patch, MagicMock
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src', 'backend'))
@@ -648,24 +648,33 @@ class TestAdvancedVectorOperations(TestS3VectorUtils):
         self.assertTrue(result)
         mock_client.put_object.assert_called_once()
     
+    @patch.dict(os.environ, {
+        'VECTOR_BUCKET_NAME': 'test-vector-bucket',
+        'VECTOR_INDEX_NAME': 'test-index',
+        'AWS_REGION': 'us-east-1'
+    })
     @patch('s3_vector_utils.get_s3_client')
     def test_cleanup_old_vectors(self, mock_get_client):
         """Test cleaning up old vectors."""
-        from datetime import datetime, timedelta
         
         mock_client = Mock()
         mock_get_client.return_value = mock_client
         
-        # Mock old objects
-        old_date = datetime.utcnow() - timedelta(days=100)
-        mock_client.get_paginator.return_value.paginate.return_value = [
+        # Mock old objects - use timezone-naive datetime that's older than 90 days
+        # The function will call .replace(tzinfo=None) on this, so it needs to be timezone-aware initially
+        old_date = datetime.now(timezone.utc) - timedelta(days=100)
+        
+        # Mock the paginator to return old objects
+        mock_paginator = Mock()
+        mock_client.get_paginator.return_value = mock_paginator
+        mock_paginator.paginate.return_value = [
             {
                 'Contents': [
                     {'Key': 'vectors/test-index/old_vector.json', 'LastModified': old_date}
                 ]
             }
         ]
-        mock_client.delete_objects.return_value = {'Deleted': [{'Key': 'old_vector.json'}]}
+        mock_client.delete_objects.return_value = {'Deleted': [{'Key': 'vectors/test-index/old_vector.json'}]}
         
         from s3_vector_utils import cleanup_old_vectors
         result = cleanup_old_vectors(days_old=90)
@@ -709,7 +718,7 @@ class TestVectorSearchOptimizations(TestS3VectorUtils):
         
         query_embedding = [0.1] * 1536
         
-        with patch('s3_vector_utils._query_vectors_optimized_batch') as mock_batch:
+        with patch('s3_vector_utils._query_vectors_batch') as mock_batch:
             mock_batch.return_value = [{'id': 'test', 'similarity': 0.9}]
             
             result = _hierarchical_vector_search(

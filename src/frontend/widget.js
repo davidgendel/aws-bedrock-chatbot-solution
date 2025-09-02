@@ -620,7 +620,7 @@
       feedbackContainer.textContent = '';
       
       const textArea = document.createElement('textarea');
-      textArea.placeholder = 'How could this response be improved?';
+      textArea.placeholder = 'How could this response be better?';
       textArea.style.width = '100%';
       textArea.style.padding = '5px';
       textArea.style.marginTop = '5px';

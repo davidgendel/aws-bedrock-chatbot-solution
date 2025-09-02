@@ -172,8 +172,8 @@ class VectorIndexManager:
                 print("⚡ Optimization:")
                 print(f"   Partitioning: {'Enabled' if optimization.get('partitioning_enabled') else 'Disabled'}")
                 print(f"   Caching: {'Enabled' if optimization.get('cache_enabled') else 'Disabled'}")
-                if optimization.get('last_optimized'):
-                    print(f"   Last Optimized: {optimization['last_optimized']}")
+                if optimization.get('last_processed'):
+                    print(f"   Last Processed: {optimization['last_optimized']}")
         
         except Exception as e:
             print(f"❌ Error getting index info: {e}")
@@ -236,7 +236,7 @@ class VectorIndexManager:
             result = optimize_vector_index(index_name)
             
             if result.get("success"):
-                print(f"✅ Successfully optimized index '{index_name}'")
+                print(f"✅ Successfully processed index '{index_name}'")
                 print(f"📊 Vector count: {result.get('vector_count', 'N/A')}")
                 print(f"💾 Index size: {result.get('index_size_mb', 'N/A')} MB")
                 print(f"🧹 Cache cleared: {result.get('cache_cleared', False)}")

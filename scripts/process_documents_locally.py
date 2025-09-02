@@ -14,7 +14,7 @@ import time
 import re
 from pathlib import Path
 from typing import Dict, List, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 import multiprocessing as mp
 
@@ -454,7 +454,7 @@ class LocalDocumentProcessor:
             return ""
     
     def _create_chunks(self, text: str, metadata: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Create overlapping chunks from text with enhanced semantic metadata."""
+        """Create overlapping chunks from text with semantic metadata."""
         sentences = sent_tokenize(text)
         chunks = []
         
@@ -480,20 +480,20 @@ class LocalDocumentProcessor:
             sentence_buffer.append(sentence)
             
             if current_size + len(sentence) > max_chunk_size and current_chunk:
-                # Extract enhanced metadata for this chunk
-                enhanced_metadata = self._extract_chunk_metadata(current_chunk, len(chunks), metadata)
+                # Extract metadata for this chunk
+                chunk_metadata = self._extract_chunk_metadata(current_chunk, len(chunks), metadata)
                 
-                # Create current chunk with enhanced metadata
+                # Create current chunk with metadata
                 chunks.append({
                     "content": current_chunk.strip(),
                     "metadata": metadata.copy(),
                     "chunk_index": len(chunks),
-                    "heading": enhanced_metadata["heading"],
-                    "chunk_type": enhanced_metadata["chunk_type"],
-                    "key_entities": enhanced_metadata["key_entities"],
-                    "topics": enhanced_metadata["topics"],
-                    "importance_score": enhanced_metadata["importance_score"],
-                    "context_summary": enhanced_metadata["context_summary"]
+                    "heading": chunk_metadata["heading"],
+                    "chunk_type": chunk_metadata["chunk_type"],
+                    "key_entities": chunk_metadata["key_entities"],
+                    "topics": chunk_metadata["topics"],
+                    "importance_score": chunk_metadata["importance_score"],
+                    "context_summary": chunk_metadata["context_summary"]
                 })
                 
                 # Calculate overlap for next chunk
@@ -536,19 +536,19 @@ class LocalDocumentProcessor:
                     current_chunk = sentence
                 current_size += len(sentence)
         
-        # Add the last chunk with enhanced metadata
+        # Add the last chunk with metadata
         if current_chunk.strip():
-            enhanced_metadata = self._extract_chunk_metadata(current_chunk, len(chunks), metadata)
+            chunk_metadata = self._extract_chunk_metadata(current_chunk, len(chunks), metadata)
             chunks.append({
                 "content": current_chunk.strip(),
                 "metadata": metadata.copy(),
                 "chunk_index": len(chunks),
-                "heading": enhanced_metadata["heading"],
-                "chunk_type": enhanced_metadata["chunk_type"],
-                "key_entities": enhanced_metadata["key_entities"],
-                "topics": enhanced_metadata["topics"],
-                "importance_score": enhanced_metadata["importance_score"],
-                "context_summary": enhanced_metadata["context_summary"]
+                "heading": chunk_metadata["heading"],
+                "chunk_type": chunk_metadata["chunk_type"],
+                "key_entities": chunk_metadata["key_entities"],
+                "topics": chunk_metadata["topics"],
+                "importance_score": chunk_metadata["importance_score"],
+                "context_summary": chunk_metadata["context_summary"]
             })
         
         # Add relationship context between chunks
@@ -941,22 +941,22 @@ class LocalDocumentProcessor:
         return results
 
     def _generate_embeddings(self, text: str) -> List[float]:
-        """Generate embeddings using Bedrock with optimized text length and validation."""
+        """Generate embeddings using Bedrock with text length validation."""
         def _generate():
             bedrock_client = self._get_bedrock_client()
             
-            # Optimize text length for better embedding quality
-            optimized_text = self._optimize_text_for_embedding(text)
+            # Process text length for better embedding quality
+            processed_text = self._optimize_text_for_embedding(text)
             
             # Skip empty or whitespace-only text
-            if not optimized_text.strip():
+            if not processed_text.strip():
                 logger.warning("Empty text provided for embedding generation")
                 return [0.001] * self.config["vectorIndex"]["dimensions"]  # Small non-zero vector
             
             response = bedrock_client.invoke_model(
                 modelId=self.config["bedrock"]["embeddingModelId"],
                 body=json.dumps({
-                    "inputText": optimized_text
+                    "inputText": processed_text
                 })
             )
             
@@ -965,8 +965,8 @@ class LocalDocumentProcessor:
             
             # Validate embedding to prevent zero norm vectors
             if not self._validate_embedding(embedding):
-                logger.warning(f"Invalid embedding generated for text: {optimized_text[:100]}...")
-                return self._generate_fallback_embedding(optimized_text)
+                logger.warning(f"Invalid embedding generated for text: {processed_text[:100]}...")
+                return self._generate_fallback_embedding(processed_text)
             
             return embedding
         
@@ -1124,7 +1124,7 @@ class LocalDocumentProcessor:
             document_metadata = {
                 "document_id": document_id,
                 "total_chunks": len(chunks),
-                "processed_at": datetime.utcnow().isoformat(),
+                "processed_at": datetime.now(timezone.utc).isoformat(),
                 "vector_dimensions": len(embeddings[0]) if embeddings else 0,
                 "content_summary": chunks[0]["content"][:200] + "..." if chunks else ""
             }
@@ -1264,7 +1264,7 @@ class LocalDocumentProcessor:
         
         try:
             config = self._get_optimal_batch_config()
-            logger.info(f"Using advanced processing with system-optimized configuration")
+            logger.info(f"Using advanced processing with system configuration")
         except Exception as e:
             logger.error(f"Failed to get optimal configuration: {e}")
             raise

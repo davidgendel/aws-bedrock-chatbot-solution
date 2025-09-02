@@ -139,7 +139,7 @@ class VectorManager:
                     if index_name:
                         self.base_manager.optimize_index(index_name)
                 
-                print("✅ All indexes optimized")
+                print("✅ All indexes processed")
                 return 0
             except Exception as e:
                 print(f"❌ Optimization failed: {e}")

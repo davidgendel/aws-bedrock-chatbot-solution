@@ -6,7 +6,7 @@ import os
 import signal
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import boto3
@@ -14,10 +14,10 @@ import boto3
 # Handle imports for both Lambda and local environments
 try:
     # Try relative imports first (for local development)
-    from .aws_utils import get_aws_region, get_aws_client
+    from .aws_utils import get_aws_region
     from .bedrock_utils import (
         apply_guardrails, generate_embeddings, generate_response, cached_apply_guardrails,
-        generate_cached_response, get_cached_context, cache_context, get_bedrock_client
+        generate_cached_response, get_cached_context, cache_context
     )
     from .cache_manager import cache_manager, CacheType, get_cached_response, cache_response
     from .error_handler import (
@@ -35,10 +35,10 @@ try:
     from .validation import validate_input, validate_websocket_input
 except ImportError:
     # Fall back to absolute imports (for Lambda environment)
-    from aws_utils import get_aws_region, get_aws_client
+    from aws_utils import get_aws_region
     from bedrock_utils import (
         apply_guardrails, generate_embeddings, generate_response, cached_apply_guardrails,
-        generate_cached_response, get_cached_context, cache_context, get_bedrock_client
+        generate_cached_response, get_cached_context, cache_context
     )
     from cache_manager import cache_manager, CacheType, get_cached_response, cache_response
     from error_handler import (
@@ -227,7 +227,7 @@ def handle_chat_request(body: Dict[str, Any]) -> Dict[str, Any]:
             cache_context(embedding, limit=3, threshold=0.45, context=relevant_docs)
             logger.info("Cached document context")
         
-        # Construct prompt with retrieved documents and enhanced metadata
+        # Construct prompt with retrieved documents and metadata
         context = ""
         if relevant_docs:
             context = "Here is some relevant information that might help answer the question:\n\n"
@@ -410,6 +410,7 @@ def stream_response_to_connection(
         prompt: Input prompt
         model_id: Bedrock model ID
     """
+    from bedrock_utils import get_bedrock_client
     bedrock_client = get_bedrock_client()
     
     try:
@@ -705,7 +706,7 @@ def _handle_websocket_heartbeat(connection_id: str, api_client) -> Dict[str, Any
             ConnectionId=connection_id,
             Data=json.dumps({
                 "type": "heartbeat",
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             })
         )
         return {"statusCode": 200}

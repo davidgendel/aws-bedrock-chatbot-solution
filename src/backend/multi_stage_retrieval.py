@@ -350,7 +350,7 @@ def enhanced_query_similar_vectors(
     use_multi_stage: bool = None
 ) -> List[Dict[str, Any]]:
     """
-    Enhanced vector query with optional multi-stage retrieval.
+    Vector query with optional multi-stage retrieval.
     
     Args:
         query_embedding: Query vector embedding
