@@ -329,119 +329,6 @@ def process_knowledge_base(region: str):
         warning("No documents folder found or folder is empty. Create a 'documents' folder and add your knowledge base files.")
 
 
-def configure_database_security(db_security_group: str, region: str):
-    """Configure database security."""
-    section("Configuring Database Security")
-    print(f"Adding security group rules for EC2 and Lambda services in {region} region...")
-    
-    if not db_security_group:
-        warning("Could not find database security group ID in stack outputs. Skipping security group configuration.")
-        return
-    
-    print(f"Found database security group: {YELLOW}{db_security_group}{NC}")
-    
-    # Add IPv4 rules for EC2 and Lambda services in the configured region
-    print(f"Adding IPv4 rules for EC2 and Lambda services in {region}...")
-    
-    try:
-        ec2_client = AWSClientFactory.create_client("ec2", region_name=region, enable_signing=True)
-    except:
-        ec2_client = boto3.client("ec2", region_name=region)
-    
-    # Note: These CIDR blocks are specific to us-east-1
-    # For other regions, you would need to update these ranges
-    if region == "us-east-1":
-        # Large blocks for us-east-1
-        large_blocks = [
-            "3.80.0.0/12", "3.208.0.0/12", "3.224.0.0/12", "34.192.0.0/12", 
-            "34.224.0.0/12", "44.192.0.0/11", "52.0.0.0/8", "54.0.0.0/8"
-        ]
-        
-        for cidr in large_blocks:
-            print(f"Adding rule for {cidr}...")
-            try:
-                ec2_client.authorize_security_group_ingress(
-                    GroupId=db_security_group,
-                    IpProtocol="tcp",
-                    FromPort=5432,
-                    ToPort=5432,
-                    CidrIp=cidr
-                )
-            except ec2_client.exceptions.ClientError as e:
-                if e.response["Error"]["Code"] == "InvalidPermission.Duplicate":
-                    warning(f"Rule for {cidr} already exists")
-                else:
-                    warning(f"Failed to add rule for {cidr}: {e}")
-        
-        # Medium blocks for us-east-1
-        medium_blocks = [
-            "13.216.0.0/13", "18.204.0.0/14", "18.208.0.0/13", "23.20.0.0/14", 
-            "35.168.0.0/13", "50.16.0.0/15", "98.80.0.0/12", "100.24.0.0/13", 
-            "107.20.0.0/14", "174.129.0.0/16", "184.73.0.0/16"
-        ]
-        
-        for cidr in medium_blocks:
-            print(f"Adding rule for {cidr}...")
-            try:
-                ec2_client.authorize_security_group_ingress(
-                    GroupId=db_security_group,
-                    IpProtocol="tcp",
-                    FromPort=5432,
-                    ToPort=5432,
-                    CidrIp=cidr
-                )
-            except ec2_client.exceptions.ClientError as e:
-                if e.response["Error"]["Code"] == "InvalidPermission.Duplicate":
-                    warning(f"Rule for {cidr} already exists")
-                else:
-                    warning(f"Failed to add rule for {cidr}: {e}")
-        
-        # Add IPv6 rules for us-east-1
-        print(f"Adding IPv6 rules for EC2 and Lambda services in {region}...")
-        ipv6_blocks = ["2600:1f00::/24", "2600:f0f0::/28", "2606:f40::/36"]
-        
-        for ipv6_cidr in ipv6_blocks:
-            print(f"Adding rule for {ipv6_cidr}...")
-            try:
-                ec2_client.authorize_security_group_ingress(
-                    GroupId=db_security_group,
-                    IpPermissions=[
-                        {
-                            "IpProtocol": "tcp",
-                            "FromPort": 5432,
-                            "ToPort": 5432,
-                            "Ipv6Ranges": [{"CidrIpv6": ipv6_cidr}]
-                        }
-                    ]
-                )
-            except ec2_client.exceptions.ClientError as e:
-                if e.response["Error"]["Code"] == "InvalidPermission.Duplicate":
-                    warning(f"Rule for {ipv6_cidr} already exists")
-                else:
-                    warning(f"Failed to add rule for {ipv6_cidr}: {e}")
-    else:
-        warning(f"Security group rules are pre-configured for us-east-1 region only.")
-        warning(f"For region {region}, you may need to manually configure security group rules.")
-        warning(f"Please refer to AWS documentation for Lambda IP ranges in your region.")
-        
-        # Add a basic rule allowing all traffic (less secure but functional)
-        print(f"Adding basic rule to allow Lambda access (consider restricting this in production)...")
-        try:
-            ec2_client.authorize_security_group_ingress(
-                GroupId=db_security_group,
-                IpProtocol="tcp",
-                FromPort=5432,
-                ToPort=5432,
-                CidrIp="0.0.0.0/0"
-            )
-        except ec2_client.exceptions.ClientError as e:
-            if e.response["Error"]["Code"] == "InvalidPermission.Duplicate":
-                warning(f"Rule for 0.0.0.0/0 already exists")
-            else:
-                warning(f"Failed to add basic rule: {e}")
-    
-    success(f"Security group rules configured for region {region}")
-
 
 def display_summary(outputs: Dict[str, str]):
     """Display deployment summary."""
@@ -509,10 +396,7 @@ def main():
         # Process knowledge base
         process_knowledge_base(region)
         
-        # Configure database security
-        db_security_group = outputs.get("db_security_group")
-        if db_security_group:
-            configure_database_security(db_security_group, region)
+
         
         # Display summary
         display_summary(outputs)

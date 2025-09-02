@@ -74,8 +74,7 @@ class RecoveryManager:
             "knowledge_base": {
                 "substeps": [
                     "create_documents_folder",
-                    "process_documents",
-                    "upload_to_database"
+                    "process_documents"
                 ],
                 "rollback_actions": [
                     self._rollback_knowledge_base

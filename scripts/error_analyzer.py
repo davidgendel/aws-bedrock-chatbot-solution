@@ -141,17 +141,7 @@ class ErrorAnalyzer:
             },
             
             # Service-Specific Errors
-            "DBInstanceAlreadyExists": {
-                "type": "rds_exists",
-                "title": "Database Already Exists",
-                "description": "An RDS instance with this name already exists",
-                "solutions": [
-                    "Choose a different database name in config.json",
-                    "Delete the existing database if it's not needed",
-                    "Use a different AWS region",
-                    "Check if this is a leftover from a previous deployment"
-                ]
-            },
+
             "InvalidParameterValue.*not supported": {
                 "type": "service_not_supported",
                 "title": "Service Not Supported in Region",

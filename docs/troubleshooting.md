@@ -132,7 +132,7 @@ This guide provides solutions for common issues you might encounter during deplo
 - **Solution**:
   ```bash
   # Manual cleanup
-  python3 scripts/cleanup_database.py --force
+  ./chatbot cleanup --s3-only
   
   # Delete CloudFormation stack manually
   aws cloudformation delete-stack --stack-name ChatbotRagStack

@@ -140,7 +140,7 @@ def _classify_error(error: Exception) -> ErrorType:
     error_message = str(error).lower()
     
     # Database-related errors
-    if any(db_error in error_name for db_error in ['psycopg2', 'DatabaseError', 'OperationalError', 'IntegrityError']):
+    if any(db_error in error_name for db_error in ['DatabaseError', 'OperationalError', 'IntegrityError']):
         return ErrorType.DATABASE_ERROR
     
     # Bedrock/AWS-related errors
