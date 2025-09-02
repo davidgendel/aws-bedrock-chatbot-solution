@@ -1,5 +1,4 @@
 # Core dependencies used in Lambda functions
-# Optimized layer - removed unused dependencies (52% size reduction)
 
 numpy==1.26.4           # Vector operations in s3_vector_utils.py
 structlog==24.4.0       # Structured logging in logging_config.py

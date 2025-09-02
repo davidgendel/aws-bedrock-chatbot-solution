@@ -6,14 +6,13 @@ Deploy an AI chatbot that learns from your documents in 15-20 minutes. **Startin
 
 ## 🚀 Quick Start
 
+After validating all of the dependencies:
+
 ```bash
-git clone https://github.com/your-github-username/aws-bedrock-chatbot-solution.git
+git clone https://github.com/davidgendel/aws-bedrock-chatbot-solution.git
 cd aws-bedrock-chatbot-solution
 ./chatbot deploy
 ```
-
-**⚠️ Replace `your-github-username` with your actual GitHub username**
-
 
 ## ✨ Features
 
@@ -37,6 +36,16 @@ cd aws-bedrock-chatbot-solution
 - Node 22+ installed
 - Git installed
 - Docker installed
+
+There are two example scripts to help you install the dependencies - these scripts are not required. You can install the project dependencies however you like. If you are running a Fedora or Ubuntu based system, you can leverage these scripts:
+
+```bash
+# For Ubuntu/Debian systems
+./scripts/install-deps-ubuntu.sh
+
+# For Fedora/RHEL systems  
+./scripts/install-deps-fedora.sh
+```
 
 ## 🛠️ Commands
 
